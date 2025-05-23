@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Setup Schedule Period{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2>Setup Scheduling Period</h2>
+        <p class="lead">Define the overall start and end date/time for which you'll be creating a schedule.</p>
+        <form method="POST" action="{{ url_for('main.setup_period') }}" class="needs-validation" novalidate>
+            <h4>Scheduling Period</h4>
+            <div class="form-group">
+                <label for="scheduling_period_range">Select Period Start and End Dates:</label>
+                <input type="text" class="form-control" id="scheduling_period_range" name="scheduling_period_range_str" value="{{ initial_range_str }}" required placeholder="Click to select date range">
+                <div class="invalid-feedback">Please select a date range.</div>
+            </div>
+            <div class="form-row">
+                <div class="form-group col-md-6">
+                    <label for="period_start_time">Period Start Time (on first day):</label>
+                    <input type="time" class="form-control" id="period_start_time" name="period_start_time" value="{{ s_time }}" required>
+                    <div class="invalid-feedback">Please select a start time.</div>
+                </div>
+                <div class="form-group col-md-6">
+                    <label for="period_end_time">Period End Time (on last day):</label>
+                    <input type="time" class="form-control" id="period_end_time" name="period_end_time" value="{{ e_time }}" required>
+                    <div class="invalid-feedback">Please select an end time.</div>
+                </div>
+            </div>
+            <input type="hidden" id="scheduling_period_start" name="scheduling_period_start">
+            <input type="hidden" id="scheduling_period_end" name="scheduling_period_end">
+
+            <hr>
+            <button type="submit" class="btn btn-primary btn-lg">Save Period & Define Shifts</button>
+             <a href="{{ url_for('main.index') }}" class="btn btn-secondary btn-lg">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const startDateInput = document.getElementById('scheduling_period_start');
+        const endDateInput = document.getElementById('scheduling_period_end');
+        const rangeInput = document.getElementById('scheduling_period_range');
+
+        const picker = new Litepicker({
+            element: rangeInput,
+            singleMode: false,
+            numberOfMonths: 2,
+            numberOfColumns: 2,
+            format: 'YYYY-MM-DD',
+            tooltipText: { one: 'day', other: 'days' },
+            setup: (pickerInstance) => {
+                pickerInstance.on('selected', (date1, date2) => {
+                    if (date1 && date2) {
+                        startDateInput.value = date1.format('YYYY-MM-DD');
+                        endDateInput.value = date2.format('YYYY-MM-DD');
+                        rangeInput.value = `${date1.format('YYYY-MM-DD')} - ${date2.format('YYYY-MM-DD')}`;
+                    } else {
+                        startDateInput.value = '';
+                        endDateInput.value = '';
+                        // rangeInput.value = ''; // Keep existing if only one date cleared
+                    }
+                });
+            }
+        });
+
+        // Pre-fill hidden inputs if initial_range_str has a value (from session)
+        if (rangeInput.value) {
+            const dates = rangeInput.value.split(' - ');
+            if (dates.length === 2) {
+                startDateInput.value = dates[0];
+                endDateInput.value = dates[1];
+            }
+        }
+         // Bootstrap validation
+        var forms = document.getElementsByClassName('needs-validation');
+        Array.prototype.filter.call(forms, function(form) {
+          form.addEventListener('submit', function(event) {
+            if (form.checkValidity() === false) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+          }, false);
+        });
+    });
+</script>
+{% endblock %}
