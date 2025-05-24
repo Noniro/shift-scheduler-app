@@ -1,0 +1,12 @@
+from app import db, create_app
+from app.models import SchedulingPeriod, ShiftTemplate, ShiftDefinition, Worker, Constraint, ScheduledShift, User
+app_instance = create_app()
+
+with app_instance.app_context():
+print("Dropping all tables...")
+db.drop_all()
+print("All tables dropped.")
+print("Creating all tables based on current models...")
+db.create_all()
+print("All tables created.")
+print("Done.")

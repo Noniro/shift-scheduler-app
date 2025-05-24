@@ -1,0 +1,29 @@
+/* app/static/css/style.css */
+body {
+    padding-top: 0.5rem; /* Small padding at the top */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.navbar {
+    margin-bottom: 1.5rem !important;
+}
+
+.card {
+    margin-bottom: 1.5rem;
+}
+
+.table-responsive {
+    max-height: 500px; /* Example: make schedule table scrollable if too long */
+    overflow-y: auto;
+    margin-bottom: 1rem;
+}
+
+.list-group-item.active {
+    z-index: 2;
+    color: #fff;
+    background-color: #007bff; /* Bootstrap primary blue */
+    border-color: #007bff;
+}
+.list-group-item.active small {
+    color: #f8f9fa; /* Lighter text for small elements on active item */
+}

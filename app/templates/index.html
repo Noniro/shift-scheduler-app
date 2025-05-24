@@ -43,9 +43,9 @@
                             <div class="invalid-feedback">Worker name is required.</div>
                         </div>
                         <div class="form-group">
-                            <label for="worker_email">Email:</label>
-                            <input type="email" class="form-control" id="worker_email" name="worker_email" required>
-                            <div class="invalid-feedback">Valid email is required.</div>
+                            <label for="worker_email">Email (Optional):</label> <!-- Label updated -->
+                            <input type="email" class="form-control" id="worker_email" name="worker_email"> <!-- 'required' removed -->
+                         <div class="invalid-feedback">Please enter a valid email if providing one.</div>
                         </div>
                         <div class="form-group">
                             <label for="max_hours_per_week">Max Hours for this Period (optional):</label>
@@ -60,8 +60,9 @@
                         {% for worker in workers %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div>
-                                    {{ worker.name }} <small class="text-muted">({{ worker.email }})</small>
-                                    <br><small>Max Hours: {{ worker.max_hours_per_week if worker.max_hours_per_week else 'N/A' }}</small>
+                                    {{ worker.name }}
+                                    {% if worker.email %}<small class="text-muted"> ({{ worker.email }})</small>{% endif %} {# Display email only if it exists #}
+                                    <br><small>Max Hours: {{ worker.max_hours_per_week if worker.max_hours_per_week is not none else 'N/A' }}</small>
                                     <br><small>Constraints: {{ worker.constraints.count() }}</small>
                                 </div>
                                 <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#constraintModal-{{ worker.id }}">Add Unavailability</button>
