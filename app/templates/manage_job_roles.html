@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Manage Job Roles for {{ period.name }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <h2>Job Roles & Coverage Slots for Period: '{{ period.name }}'</h2>
+        <p class="lead">
+            ({{ period.period_start_datetime.strftime('%Y-%m-%d %H:%M') }} to {{ period.period_end_datetime.strftime('%Y-%m-%d %H:%M') }})
+            <a href="{{ url_for('main.manage_periods') }}" class="btn btn-sm btn-outline-secondary ml-2">Back to All Periods</a>
+        </p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-info text-white">Add New Job Role</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" class="needs-validation" novalidate>
+                    <div class="form-group">
+                        <label for="role_name">Role Name (e.g., Cook, Servant, Manager):</label>
+                        <input type="text" class="form-control" id="role_name" name="role_name" placeholder="e.g., Cook" required>
+                        <div class="invalid-feedback">Role name is required.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="number_needed">Number of Workers Needed Simultaneously for this Role:</label>
+                        <input type="number" class="form-control" id="number_needed" name="number_needed" value="1" min="1" required>
+                        <div class="invalid-feedback">At least 1 worker needed.</div>
+                    </div>
+                    <p><strong>Standard Shift Duration for this Role:</strong> (Min 20 minutes total)</p>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="duration_days">Days:</label>
+                            <input type="number" class="form-control" id="duration_days" name="duration_days" value="0" min="0" max="30" required>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="duration_hours">Hours:</label>
+                            <input type="number" class="form-control" id="duration_hours" name="duration_hours" value="8" min="0" max="23" required>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="duration_minutes">Minutes:</label>
+                            <input type="number" class="form-control" id="duration_minutes" name="duration_minutes" value="0" min="0" max="59" step="5" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">Add Job Role</button>
+                </form>
+            </div>
+        </div>
+
+        <h4>Existing Job Roles <span class="badge badge-secondary">{{ job_roles|length }}</span></h4>
+        {% if job_roles %}
+            <ul class="list-group mb-3">
+            {% for role in job_roles %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ role.name }}</strong> (Need: {{ role.number_needed }})<br>
+                        <small>Shift Duration:
+                            {# CORRECTED ATTRIBUTE NAMES BELOW #}
+                            {% if role.shift_duration_days > 0 %}{{ role.shift_duration_days }}d {% endif %}
+                            {% if role.shift_duration_hours > 0 %}{{ role.shift_duration_hours }}h {% endif %}
+                            {% if role.shift_duration_minutes > 0 %}{{ role.shift_duration_minutes }}m{% endif %}
+                            {% if role.shift_duration_days == 0 and role.shift_duration_hours == 0 and role.shift_duration_minutes == 0 %}0m (Warning: No duration!){% endif %}
+                        </small>
+                    </div>
+                    <form method="POST" action="{{ url_for('main.delete_job_role', period_id=period.id, role_id=role.id) }}" style="display: inline;">
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('DELETE role \'{{role.name}}\' and ALL its generated slots/assignments? This cannot be undone.');">Delete Role</button>
+                    </form>
+                </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p>No job roles defined for this period yet. Add roles like "Cook", "Servant", "Manager" and specify how many are needed and their typical shift length.</p>
+        {% endif %}
+    </div>
+
+    <div class="col-md-7">
+        <h4>Generate/View Coverage Slots & Assign Workers</h4> {# Title updated #}
+        {% if job_roles %}
+            {# Ensure this form points to the new combined route #}
+            <form method="POST" action="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}">
+                <button type="submit" class="btn btn-success btn-lg btn-block mb-3"> <!-- Changed to btn-success -->
+                    {% if has_generated_slots %}Re-Generate Slots & Assign Workers{% else %}Generate Slots & Assign Workers{% endif %}
+                </button>
+                <p class="text-muted small">This will create coverage slots for each job role and immediately attempt to assign qualified workers. Existing slots and assignments for this period will be replaced.</p>
+            </form>
+        {% else %}
+            <p>Add job roles first to enable generation of coverage slots and assignments.</p>
+        {% endif %}
+
+        {% if generated_slots %}
+            <h5 class="mt-3">Generated Coverage Slots <span class="badge badge-info">{{ generated_slots|length }}</span></h5>
+            <div class="list-group" style="max-height: 500px; overflow-y: auto;">
+            {% for slot in generated_slots %}
+                <div class="list-group-item list-group-item-action flex-column align-items-start">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">{{ slot.name }}</h6>
+                        <small>{{ slot.duration_hours_minutes_str }}</small>
+                    </div>
+                    <p class="mb-1"><small>
+                        {{ slot.slot_start_datetime.strftime('%a, %b %d, %Y %I:%M %p') }}
+                        <strong>to</strong>
+                        {{ slot.slot_end_datetime.strftime('%a, %b %d, %Y %I:%M %p') }}
+                    </small></p>
+                </div>
+            {% endfor %}
+            </div>
+        {% elif has_generated_slots == false and job_roles %}
+             <p class="mt-3">No coverage slots have been generated yet. Click the button above.</p>
+        {% endif %}
+    </div>
+</div>
+<hr>
+<div class="mt-3 mb-3 text-center">
+    <a href="{{ url_for('main.manage_workers') }}" class="btn btn-info btn-lg mx-2">Manage Workers & Qualifications</a>
+    {# This link now primarily shows the result, assignments happen from this page #}
+    <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg mx-2">Go to Dashboard (View Full Schedule)</a> 
+</div>
+{% endblock %}
+
+{% block scripts %}{{ super() }}
+<script>
+(function() {'use strict';window.addEventListener('load', function() {
+var forms=document.getElementsByClassName('needs-validation');
+Array.prototype.filter.call(forms,function(f){f.addEventListener('submit',function(e){
+if(f.checkValidity()===false){e.preventDefault();e.stopPropagation();}
+f.classList.add('was-validated');},false);});},false);})();
+</script>
+{% endblock %}

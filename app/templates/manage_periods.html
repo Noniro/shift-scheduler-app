@@ -4,18 +4,18 @@
 {% block content %}
 <div class="row">
     <div class="col-md-5">
-        <div class="card">
-            <div class="card-header">Create New Scheduling Period</div>
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">Create New Scheduling Period</div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('main.manage_periods') }}" class="needs-validation" novalidate>
                     <div class="form-group">
                         <label for="period_name">Period Name:</label>
-                        <input type="text" class="form-control" id="period_name" name="period_name" placeholder="e.g., Guarding The White House" required>
+                        <input type="text" class="form-control" id="period_name" name="period_name" placeholder="e.g., Restaurant Weekly Rota" required>
                         <div class="invalid-feedback">Period name is required.</div>
                     </div>
                     <div class="form-group">
-                        <label for="scheduling_period_range">Select Period Start and End Dates:</label>
-                        <input type="text" class="form-control" id="scheduling_period_range" name="scheduling_period_range_str" required placeholder="Click to select date range">
+                        <label for="scheduling_period_range_input">Select Period Start and End Dates:</label>
+                        <input type="text" class="form-control" id="scheduling_period_range_input" name="scheduling_period_range_str" required placeholder="Click to select date range">
                         <div class="invalid-feedback">Please select a date range.</div>
                     </div>
                     <div class="form-row">
@@ -30,9 +30,9 @@
                             <div class="invalid-feedback">Required.</div>
                         </div>
                     </div>
-                    <input type="hidden" id="period_start_date" name="period_start_date">
-                    <input type="hidden" id="period_end_date" name="period_end_date">
-                    <button type="submit" class="btn btn-primary">Create Period</button>
+                    <input type="hidden" id="period_start_date_hidden" name="period_start_date_hidden">
+                    <input type="hidden" id="period_end_date_hidden" name="period_end_date_hidden">
+                    <button type="submit" class="btn btn-primary btn-block">Create Period & Define Roles</button>
                 </form>
             </div>
         </div>
@@ -41,24 +41,24 @@
         <h4>Existing Scheduling Periods</h4>
         {% if periods %}
             <ul class="list-group">
-                {% for period in periods %}
-                <li class="list-group-item d-flex justify-content-between align-items-center {% if period.id == active_period_id %}active{% endif %}">
+                {% for p in periods %} {# Changed loop variable to avoid conflict #}
+                <li class="list-group-item d-flex justify-content-between align-items-center {% if p.id == active_period_id %}active{% endif %}">
                     <div>
-                        <strong>{{ period.name }}</strong><br>
-                        <small>{{ period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ period.period_end_datetime.strftime('%b %d, %Y %H:%M') }}</small>
-                         <br><small>Shift Templates: {{ period.shift_templates.count() }}, Generated Slots: {{ period.shift_definitions.count() }}</small>
+                        <strong>{{ p.name }}</strong><br>
+                        <small>{{ p.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ p.period_end_datetime.strftime('%b %d, %Y %H:%M') }}</small>
+                         <br><small>Job Roles: {{ p.job_roles.count() }}, Defined Slots: {{ p.shift_definitions.count() }}</small>
                     </div>
                     <div class="btn-group" role="group">
-                        {% if period.id != active_period_id %}
-                        <form method="POST" action="{{ url_for('main.set_active_period_action', period_id=period.id) }}" style="display: inline-block; margin-right: 5px;">
+                        {% if p.id != active_period_id %}
+                        <form method="POST" action="{{ url_for('main.set_active_period_action', period_id=p.id) }}" class="mr-1">
                             <button type="submit" class="btn btn-sm btn-success">Set Active</button>
                         </form>
                         {% else %}
-                         <span class="btn btn-sm btn-success disabled">Active</span>
+                         <span class="btn btn-sm btn-success disabled mr-1">Active</span>
                         {% endif %}
-                        <a href="{{ url_for('main.define_shift_templates', period_id=period.id) }}" class="btn btn-sm btn-info" style="margin-right: 5px;">Templates/Slots</a>
-                        <form method="POST" action="{{ url_for('main.delete_period', period_id=period.id) }}" style="display: inline-block;">
-                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete period \'{{ period.name }}\' and ALL its data?');">Delete</button>
+                        <a href="{{ url_for('main.manage_job_roles_for_period', period_id=p.id) }}" class="btn btn-sm btn-info mr-1">Roles/Slots</a>
+                        <form method="POST" action="{{ url_for('main.delete_period', period_id=p.id) }}">
+                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('DELETE period \'{{ p.name }}\' and ALL its data (roles, slots, assignments)? This cannot be undone.');">Delete</button>
                         </form>
                     </div>
                 </li>
@@ -75,22 +75,30 @@
 {{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const startDateInput = document.getElementById('period_start_date');
-    const endDateInput = document.getElementById('period_end_date');
-    const rangeInput = document.getElementById('scheduling_period_range');
+    const startDateHidden = document.getElementById('period_start_date_hidden');
+    const endDateHidden = document.getElementById('period_end_date_hidden');
+    const rangeDisplayInput = document.getElementById('scheduling_period_range_input');
 
     const picker = new Litepicker({
-        element: rangeInput, singleMode: false, numberOfMonths: 1, format: 'YYYY-MM-DD',
-        setup: (p) => {
-            p.on('selected', (d1, d2) => {
+        element: rangeDisplayInput, singleMode: false, numberOfMonths: 1, format: 'YYYY-MM-DD',
+        setup: (pInstance) => { // Changed variable name from picker to pInstance
+            pInstance.on('selected', (d1, d2) => {
                 if (d1 && d2) {
-                    startDateInput.value = d1.format('YYYY-MM-DD');
-                    endDateInput.value = d2.format('YYYY-MM-DD');
-                    rangeInput.value = `${d1.format('YYYY-MM-DD')} - ${d2.format('YYYY-MM-DD')}`;
-                } else { startDateInput.value = ''; endDateInput.value = ''; }
+                    startDateHidden.value = d1.format('YYYY-MM-DD');
+                    endDateHidden.value = d2.format('YYYY-MM-DD');
+                    // Update display input only if both dates are selected
+                    rangeDisplayInput.value = `${d1.format('YYYY-MM-DD')} - ${d2.format('YYYY-MM-DD')}`;
+                } else { 
+                    // Clear hidden fields if selection is cleared or incomplete
+                    startDateHidden.value = ''; 
+                    endDateHidden.value = ''; 
+                    // Optionally clear display input or leave as is
+                    // rangeDisplayInput.value = ''; 
+                }
             });
         }
     });
+    // Bootstrap validation (same as before)
     (function() {'use strict';window.addEventListener('load', function() {
     var forms=document.getElementsByClassName('needs-validation');
     Array.prototype.filter.call(forms,function(f){f.addEventListener('submit',function(e){

@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Shift Scheduler Home{% endblock %}
+{% block title %}Dashboard - Shift Scheduler{% endblock %}
 
 {% block content %}
     {% if not current_user_name %}
         <div class="jumbotron text-center">
             <h1>Welcome to the Shift Scheduler!</h1>
             <p class="lead">Let's get your schedule started.</p>
-            <form method="POST" action="{{ url_for('main.set_user_name') }}" class="needs-validation" novalidate>
+            <form method="POST" action="{{ url_for('main.index') }}" class="needs-validation" novalidate> {# Form posts to index now #}
                 <div class="form-group row d-flex justify-content-center">
                     <div class="col-sm-6">
                         <label for="user_name_input" class="sr-only">What's your name, scheduler?</label>
-                        <input type="text" class="form-control form-control-lg" id="user_name_input" name="user_name" placeholder="Your Name" required>
+                        <input type="text" class="form-control form-control-lg" id="user_name_input" name="user_name_field" placeholder="Your Name" required>
                         <div class="invalid-feedback">Please enter your name.</div>
                     </div>
                 </div>
@@ -24,92 +24,63 @@
                 <p>Please <a href="{{ url_for('main.manage_periods') }}" class="alert-link">select or create a Scheduling Period</a> to begin.</p>
             </div>
         {% else %} {# Active period is set #}
-            <div class="alert alert-primary text-center" role="alert">
-                <h4>Active Period: {{ active_period.name }}</h4>
-                <p>({{ active_period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ active_period.period_end_datetime.strftime('%b %d, %Y %H:%M') }})</p>
-                <p>
-                    <a href="{{ url_for('main.manage_periods') }}" class="btn btn-sm btn-outline-primary">Change Active Period</a>
-                    <a href="{{ url_for('main.define_shift_templates', period_id=active_period.id) }}" class="btn btn-sm btn-outline-primary">Define Shift Templates & Generate Slots</a>
-                </p>
+            <div class="alert alert-primary " role="alert">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="alert-heading mb-0">Active Period: {{ active_period.name }}</h4>
+                        <p class="mb-0 small">({{ active_period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ active_period.period_end_datetime.strftime('%b %d, %Y %H:%M') }})</p>
+                    </div>
+                    <div>
+                        <a href="{{ url_for('main.manage_periods') }}" class="btn btn-sm btn-outline-primary mr-2">Change/Manage Periods</a>
+                        <a href="{{ url_for('main.manage_job_roles_for_period', period_id=active_period.id) }}" class="btn btn-sm btn-outline-primary">
+                            Define Job Roles / Generate Slots & Assignments
+                        </a>
+                    </div>
+                </div>
             </div>
 
-            <div class="row">
-                <div class="col-md-4">
-                    <h4>Add Worker</h4>
-                    <form method="POST" action="{{ url_for('main.add_worker') }}" class="mb-4 needs-validation" novalidate>
-                        <div class="form-group">
-                            <label for="worker_name">Name:</label>
-                            <input type="text" class="form-control" id="worker_name" name="worker_name" required>
-                            <div class="invalid-feedback">Worker name is required.</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="worker_email">Email (Optional):</label> <!-- Label updated -->
-                            <input type="email" class="form-control" id="worker_email" name="worker_email"> <!-- 'required' removed -->
-                         <div class="invalid-feedback">Please enter a valid email if providing one.</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="max_hours_per_week">Max Hours for this Period (optional):</label>
-                            <input type="number" class="form-control" id="max_hours_per_week" name="max_hours_per_week" min="0">
-                        </div>
-                        <button type="submit" class="btn btn-primary">Add Worker</button>
-                    </form>
-                    <hr>
-                    <h4>Workers <span class="badge badge-secondary">{{ workers|length }}</span></h4>
-                    {% if workers %}
-                        <ul class="list-group mb-3">
-                        {% for worker in workers %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div>
-                                    {{ worker.name }}
-                                    {% if worker.email %}<small class="text-muted"> ({{ worker.email }})</small>{% endif %} {# Display email only if it exists #}
-                                    <br><small>Max Hours: {{ worker.max_hours_per_week if worker.max_hours_per_week is not none else 'N/A' }}</small>
-                                    <br><small>Constraints: {{ worker.constraints.count() }}</small>
-                                </div>
-                                <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#constraintModal-{{ worker.id }}">Add Unavailability</button>
-                            </li>
-                            <!-- Constraint Modal (same as before) -->
-                            <div class="modal fade" id="constraintModal-{{ worker.id }}" tabindex="-1" role="dialog">
-                              <div class="modal-dialog" role="document"><div class="modal-content"><div class="modal-header">
-                                <h5 class="modal-title">Unavailability for {{ worker.name }}</h5><button type="button" class="close" data-dismiss="modal">×</button>
-                              </div><form method="POST" action="{{ url_for('main.add_constraint', worker_id=worker.id) }}" class="needs-validation" novalidate><div class="modal-body">
-                                <p>Specify dates when {{ worker.name }} is unavailable (whole day).</p>
-                                <div class="form-group"><label for="csd_{{worker.id}}">From Date:</label><input type="date" class="form-control" id="csd_{{worker.id}}" name="constraint_start_date" required><div class="invalid-feedback">Required.</div></div>
-                                <div class="form-group"><label for="ced_{{worker.id}}">To Date (inclusive):</label><input type="date" class="form-control" id="ced_{{worker.id}}" name="constraint_end_date" required><div class="invalid-feedback">Required.</div></div>
-                              </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button><button type="submit" class="btn btn-primary">Add</button></div></form></div></div>
-                            </div>
-                        {% endfor %}
-                        </ul>
-                    {% else %}<p>No workers added yet.</p>{% endif %}
-                </div>
-
-                <div class="col-md-8">
+            <div class="row mt-4">
+                <div class="col-md-12">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h4>Schedule for '{{ active_period.name }}'</h4>
-                        {% if workers and has_defined_shift_slots %}
-                            <form method="POST" action="{{ url_for('main.generate_schedule_route') }}">
-                                <button type="submit" class="btn btn-success btn-lg">Generate/Re-Generate Schedule</button>
-                            </form>
+                        <h4>Schedule Assignments for '{{ active_period.name }}'</h4>
+                        {# "Generate Assignments" button is now part of the Job Roles page workflow #}
+                        {% if not workers %}
+                            <p class="text-warning mb-0">
+                                <a href="{{ url_for('main.manage_workers') }}">Add Workers</a> to enable schedule generation.
+                            </p>
                         {% elif not has_defined_shift_slots %}
-                             <p class="text-warning">Generate coverage slots first to enable schedule generation.</p>
-                        {% elif not workers %}
-                            <p class="text-warning">Add workers to enable schedule generation.</p>
+                             <p class="text-warning mb-0">
+                                <a href="{{ url_for('main.manage_job_roles_for_period', period_id=active_period.id) }}">Define Job Roles & Generate Slots</a> first.
+                            </p>
                         {% endif %}
                     </div>
 
-                    <h5 class="mt-4">Generated Assignments</h5>
                     {% if scheduled_assignments %}
+                        <p class="text-muted"><small>Total Assigned Slots: {{ scheduled_assignments|length }}</small></p>
                         <div class="table-responsive">
-                            <table class="table table-striped table-sm">
-                                <thead><tr><th>Slot Name</th><th>Start</th><th>End</th><th>Duration</th><th>Assigned Worker</th></tr></thead>
+                            <table class="table table-striped table-sm table-hover">
+                                <thead class="thead-dark">
+                                    <tr>
+                                        <th>Role & Instance</th>
+                                        <th>Start Time</th>
+                                        <th>End Time</th>
+                                        <th>Duration</th>
+                                        <th>Assigned Worker</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
                                 {% for assignment in scheduled_assignments %}
                                     <tr>
                                         <td>{{ assignment.defined_slot.name }}</td>
-                                        <td>{{ assignment.defined_slot.slot_start_datetime.strftime('%a, %b %d %H:%M') }}</td>
-                                        <td>{{ assignment.defined_slot.slot_end_datetime.strftime('%a, %b %d %H:%M') }}</td>
+                                        <td>{{ assignment.defined_slot.slot_start_datetime.strftime('%a, %b %d, %Y %H:%M') }}</td>
+                                        <td>{{ assignment.defined_slot.slot_end_datetime.strftime('%a, %b %d, %H:%M') }}</td>
                                         <td>{{ assignment.defined_slot.duration_hours_minutes_str }}</td>
                                         <td>
-                                            {% if assignment.worker_assigned %}{{ assignment.worker_assigned.name }}{% else %}<span class="text-danger">UNASSIGNED</span>{% endif %}
+                                            {% if assignment.worker_assigned %}
+                                                {{ assignment.worker_assigned.name }}
+                                            {% else %}
+                                                <span class="text-danger font-weight-bold">UNASSIGNED</span>
+                                            {% endif %}
                                         </td>
                                     </tr>
                                 {% endfor %}
@@ -117,9 +88,16 @@
                             </table>
                         </div>
                     {% elif has_defined_shift_slots %}
-                        <p>Schedule not generated yet for the defined slots.</p>
+                        <p class="text-center text-muted mt-4">
+                            Coverage slots have been generated for this period, but no worker assignments have been made yet.
+                            <br>Go to <a href="{{ url_for('main.manage_job_roles_for_period', period_id=active_period.id) }}">Manage Job Roles / Generate Slots & Assignments</a> to (re)generate and assign.
+                            <br>Ensure you have <a href="{{ url_for('main.manage_workers') }}">added workers</a> and set their role qualifications and unavailability.
+                        </p>
                     {% else %}
-                        <p>No coverage slots have been generated for this period. <a href="{{ url_for('main.define_shift_templates', period_id=active_period.id) }}">Generate slots now</a>.</p>
+                        <p class="text-center text-muted mt-4">
+                            No coverage slots have been generated for this period yet.
+                            <br>Start by going to <a href="{{ url_for('main.manage_job_roles_for_period', period_id=active_period.id) }}">Define Job Roles & Generate Slots</a>.
+                        </p>
                     {% endif %}
                 </div>
             </div>
