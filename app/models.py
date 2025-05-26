@@ -1,6 +1,9 @@
 from datetime import datetime, time, timedelta
 from app import db
 
+# TODO: Understand the app.db session management and how to handle transactions properly, and converting more files (csv, json) to this format
+
+
 # Association table for Worker <-> JobRole (Many-to-Many)
 worker_jobrole_association = db.Table('worker_jobrole_association',
     db.Column('worker_id', db.Integer, db.ForeignKey('worker.id', ondelete="CASCADE"), primary_key=True),

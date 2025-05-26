@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from flask import current_app
 from sqlalchemy.orm import joinedload
 
+# TODO: Understand the app.db session management and how to handle transactions properly, and converting more files (csv, json) to this format
 
 def is_worker_qualified_for_slot(worker: Worker, slot_def: ShiftDefinition):
     # worker.qualified_roles is a list of JobRole objects if eager loaded with 'subquery' or 'selectinload'
