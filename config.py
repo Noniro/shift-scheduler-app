@@ -2,6 +2,9 @@ import os
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+# Configuration class for the Flask application of sqlalchemy
+# This class contains settings for the application, including the secret key,
+# database URI, and session lifetime, and sql configurations.
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'replace-this-with-a-very-strong-random-secret-key'
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
