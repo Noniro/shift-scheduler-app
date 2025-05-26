@@ -56,6 +56,8 @@ if __name__ == '__main__':
     HOST = '127.0.0.1'
     PORT = 5000
 
+    # TODO add --input "ip:port" to run.py
+
     # When using Flask's reloader (debug=True), app.run() is called twice.
     # The first time in the main process, and the second time in a child process.
     # We only want to open the browser from the main process.
