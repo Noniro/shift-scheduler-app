@@ -245,54 +245,50 @@ def manage_job_roles_for_period(period_id):
         flash(f"Active period set to '{period.name}'.", "info")
 
     if request.method == 'POST':
+        # ... (POST logic for adding a job role - REMAINS THE SAME) ...
         try:
             role_name = request.form.get('role_name')
             number_needed_str = request.form.get('number_needed', '1')
             days_str = request.form.get('duration_days', '0')
             hours_str = request.form.get('duration_hours', '0')
             minutes_str = request.form.get('duration_minutes', '0')
-
-            if not role_name or not role_name.strip():
-                flash("Job role name is required.", "danger")
+            if not role_name or not role_name.strip(): flash("Job role name is required.", "danger")
             else:
-                role_name = role_name.strip()
-                number_needed = int(number_needed_str)
-                days = int(days_str)
-                hours = int(hours_str)
-                minutes = int(minutes_str)
-
-                if number_needed < 1:
-                    flash("Number needed must be at least 1.", "danger")
+                role_name = role_name.strip(); number_needed = int(number_needed_str)
+                days = int(days_str); hours = int(hours_str); minutes = int(minutes_str)
+                if number_needed < 1: flash("Number needed must be at least 1.", "danger")
                 else:
                     total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
-                    if total_duration_minutes < 20:
-                        flash("Minimum shift duration for a role is 20 minutes.", "danger")
-                    elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60:
-                        flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
-                    elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first():
-                        flash(f"Job role '{role_name}' already exists for this period.", "warning")
+                    if total_duration_minutes < 20: flash("Minimum shift duration for a role is 20 minutes.", "danger")
+                    elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+                    elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): flash(f"Job role '{role_name}' already exists for this period.", "warning")
                     else:
-                        new_role = JobRole(name=role_name, number_needed=number_needed,
-                                           shift_duration_days=days, shift_duration_hours=hours,
-                                           shift_duration_minutes=minutes, scheduling_period_id=period.id)
-                        db.session.add(new_role); db.session.commit()
-                        flash(f"Job Role '{role_name}' added to period '{period.name}'.", "success")
+                        new_role = JobRole(name=role_name, number_needed=number_needed, shift_duration_days=days, shift_duration_hours=hours, shift_duration_minutes=minutes, scheduling_period_id=period.id)
+                        db.session.add(new_role); db.session.commit(); flash(f"Job Role '{role_name}' added to period '{period.name}'.", "success")
         except ValueError: flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
-        except Exception as e:
-            db.session.rollback(); flash(f"Error adding job role: {e}", "danger")
-            current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
+        except Exception as e: db.session.rollback(); flash(f"Error adding job role: {e}", "danger"); current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
     job_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
-    generated_slots = ShiftDefinition.query.filter_by(scheduling_period_id=period.id)\
+    generated_slots = ShiftDefinition.query.options(joinedload(ShiftDefinition.job_role))\
+                                           .filter_by(scheduling_period_id=period.id)\
                                            .order_by(ShiftDefinition.job_role_id, ShiftDefinition.instance_number, ShiftDefinition.slot_start_datetime).all()
     has_generated_slots = bool(generated_slots)
+    workers_exist = Worker.query.first() is not None
+    can_assign = workers_exist and job_roles
+
+    # ---- RETRIEVE DETAILED MESSAGES FROM SESSION ----
+    assignment_details = session.pop('assignment_details', None) # Get and remove from session
+    # ---- END OF RETRIEVAL ----
 
     return render_template('manage_job_roles.html', 
                            period=period, 
                            job_roles=job_roles, 
                            generated_slots=generated_slots,
-                           has_generated_slots=has_generated_slots)
+                           has_generated_slots=has_generated_slots,
+                           can_assign=can_assign,
+                           assignment_details=assignment_details) # Pass to template
+
 
 
 @main_bp.route('/period/<int:period_id>/role/<int:role_id>/delete', methods=['POST'])
@@ -473,72 +469,54 @@ def add_constraint(worker_id):
     return redirect(target_redirect)
 
 
-@main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST']) # Renamed for clarity
-def generate_slots_and_assign_action(period_id): # Renamed for clarity
+@main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
+def generate_slots_and_assign_action(period_id):
     period = SchedulingPeriod.query.get_or_404(period_id)
-    job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
-
-    if not job_roles_for_period:
-        flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
-        return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-
-    # --- Step 1: Clear existing generated slots AND THEIR ASSIGNMENTS for this period ---
     current_app.logger.info(f"Clearing old data for period {period.id} ('{period.name}')")
     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
     if ids_to_delete_assignments:
         ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
-    
     ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
-    db.session.commit() # Commit deletions first
+    db.session.commit()
     current_app.logger.info(f"Old data cleared for period {period.id}.")
 
-    # --- Step 2: Generate new ShiftDefinition (coverage) slots ---
-    total_new_slots_generated = 0
-    generated_slot_objects = [] # Store newly created ShiftDefinition objects
+    job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
+    if not job_roles_for_period:
+        flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
+        return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
+    total_new_slots_generated = 0
+    generated_slot_objects = []
     for role in job_roles_for_period:
-        role_slots_generated_this_role = 0 # Slots for this role in this run
+        role_slots_generated_this_role = 0
         current_dt_for_role = period.period_start_datetime
         duration = role.get_duration_timedelta()
-
         if duration.total_seconds() <= 0:
             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration for period {period.id}.")
             flash(f"Job Role '{role.name}' has zero/negative shift duration and was skipped for slot generation.", "warning")
             continue
-
         max_iter = 5000; iter_count = 0
         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
-            iter_count += 1
-            slot_start = current_dt_for_role
-            slot_end = current_dt_for_role + duration
+            iter_count += 1; slot_start = current_dt_for_role; slot_end = current_dt_for_role + duration
             if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
-            
             if slot_start < slot_end:
                 for i in range(1, role.number_needed + 1):
                     new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
                                                instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
-                    db.session.add(new_slot) # Add to session
-                    generated_slot_objects.append(new_slot) # Keep track for assignment placeholders
-                    role_slots_generated_this_role +=1
+                    db.session.add(new_slot); generated_slot_objects.append(new_slot); role_slots_generated_this_role +=1
             current_dt_for_role = slot_end
             if current_dt_for_role >= period.period_end_datetime: break
-        
-        if iter_count >= max_iter: 
-            flash(f"Max iterations reached for role '{role.name}' during slot generation.", "warning")
-            current_app.logger.error(f"Max iterations for role {role.name} (ID: {role.id}) in period {period.id}.")
+        if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}' during slot generation.", "warning")
         total_new_slots_generated += role_slots_generated_this_role
-
     if total_new_slots_generated > 0:
         try:
-            db.session.commit() # Commit all new ShiftDefinition slots
-            flash(f"{total_new_slots_generated} coverage slots generated for '{period.name}'. Attempting assignment...", "success")
+            db.session.commit(); flash(f"{total_new_slots_generated} coverage slots generated for '{period.name}'. Attempting assignment...", "info")
             current_app.logger.info(f"{total_new_slots_generated} ShiftDefinition slots committed for period {period.id}.")
         except Exception as e:
-            db.session.rollback()
-            flash(f"Error committing generated slots: {e}", "danger")
+            db.session.rollback(); flash(f"Error committing generated slots: {e}", "danger")
             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
-            return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id)) # Stop if slots can't be saved
+            return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
     else:
         flash("No new coverage slots were generated. Check role durations. No assignments will be made.", "warning")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
@@ -546,55 +524,72 @@ def generate_slots_and_assign_action(period_id): # Renamed for clarity
     # --- Step 3: Prepare for and run assignment algorithm ---
     workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
     if not workers:
-        flash("No workers found in the system. Cannot assign shifts.", "warning")
-        # Slots are generated, but assignments can't happen.
+        flash("No workers found. Slots generated, but assignments cannot proceed.", "warning")
+        # Store this message to be displayed on the next page, maybe in session for one request
+        session['assignment_details'] = [("warning", "No workers found in the system to perform assignments.")]
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-    # Create placeholder ScheduledShift objects for all newly generated ShiftDefinition slots
-    # Need to re-fetch generated_slot_objects if they lost session context or to get IDs if not flushed.
-    # Safer: Query for all ShiftDefinition for this period that don't have a ScheduledShift yet.
-    
-    # The 'generated_slot_objects' list contains the ShiftDefinition instances we just committed.
-    # We need their IDs to create ScheduledShift instances.
-    # A flush might be needed before accessing their IDs if commit didn't happen right before.
-    # Since we did commit, their IDs should be available.
-
     assignments_to_make = []
-    for slot_def in generated_slot_objects: # These are the ShiftDefinition objects
-        if slot_def.id is None: # Should have an ID after commit
-             current_app.logger.error(f"SlotDef {slot_def} has no ID after commit, cannot create assignment placeholder.")
-             continue
-        assignment = ScheduledShift(shift_definition_id=slot_def.id)
-        assignments_to_make.append(assignment)
-    
+    for slot_def in generated_slot_objects:
+        if slot_def.id is None: continue
+        assignments_to_make.append(ScheduledShift(shift_definition_id=slot_def.id))
     if assignments_to_make:
-        db.session.add_all(assignments_to_make)
-        db.session.commit()
+        db.session.add_all(assignments_to_make); db.session.commit()
         current_app.logger.info(f"{len(assignments_to_make)} ScheduledShift placeholders created for period {period.id}.")
     else:
-        flash("No assignment placeholders could be created, though slots were generated. This is unexpected.", "danger")
+        flash("No assignment placeholders created, though slots generated. Unexpected error.", "danger")
         current_app.logger.error(f"Failed to create ScheduledShift placeholders for period {period.id} despite {total_new_slots_generated} slots.")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
     from .algorithm import assign_shifts_fairly
-    
-    # Fetch the pending assignments (ScheduledShift objects that were just created)
-    # These should all have worker_id = None
     all_pending_assignments = ScheduledShift.query.options(
-            joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role) # Eager load for algorithm
+            joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role)
         ).join(ShiftDefinition)\
         .filter(ShiftDefinition.scheduling_period_id == period.id, ScheduledShift.worker_id.is_(None))\
         .all()
     
     current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
-    _successful_assignment, algo_messages = assign_shifts_fairly(all_pending_assignments, workers, period)
+    assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
     
-    for msg_type, msg_text in algo_messages:
-        flash(msg_text, msg_type)
+    # ---- MODIFIED MESSAGE HANDLING ----
+    # Store detailed messages in session to be picked up by the next request (the redirect)
+    # This is a common pattern for Post/Redirect/Get with complex feedback.
+    detailed_assignment_warnings = []
+    error_count = 0
+    warning_summary_count = 0 # Count for summary message
+
+    for msg_type, msg_text in algo_messages_raw:
+        if msg_type == "error":
+            error_count += 1
+            current_app.logger.error(f"Algo Error: {msg_text}")
+            # Flash critical errors immediately
+            flash(f"Critical Algorithm Error: {msg_text}", "danger")
+        elif msg_type == "warning": # Typically "Could not assign..."
+            warning_summary_count +=1
+            detailed_assignment_warnings.append(msg_text) # Collect for detailed display
+            current_app.logger.warning(f"Algo Warning: {msg_text}")
+        elif msg_type == "success":
+            flash(msg_text, "success")
+        else: # info or other types
+            flash(msg_text, msg_type)
     
-    if _successful_assignment:
-        flash("Shift assignment process completed successfully.", "success")
-    else:
-        flash("Shift assignment process completed with some unassigned slots.", "warning")
+    session['assignment_details'] = detailed_assignment_warnings # Store details in session
+
+    if error_count > 0:
+        flash(f"{error_count} critical errors occurred during assignment. Check server logs.", "danger")
+    
+    if warning_summary_count > 0:
+        flash(f"Assignment complete: {warning_summary_count} slots could not be filled. See details below or check server logs.", "warning")
+    
+    if assignment_successful and error_count == 0 and warning_summary_count == 0:
+        flash("All shifts assigned successfully!", "success")
+    elif not assignment_successful and error_count == 0 and warning_summary_count == 0:
+        flash("Shift assignment process completed, but the algorithm reported not all shifts filled (no specific warnings).", "warning")
+    elif total_new_slots_generated > 0 and not all_pending_assignments and (error_count > 0 or warning_summary_count > 0):
+        flash("Slots were generated, but assignment step encountered issues before processing.", "danger")
+    # A general info message isn't needed if specific summaries are given
+    # ---- END OF MODIFIED MESSAGE HANDLING ----
 
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+# ... (manage_job_roles_for_period GET part needs to retrieve and pass these messages) ...
