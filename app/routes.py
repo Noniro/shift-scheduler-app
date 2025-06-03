@@ -1,9 +1,16 @@
-from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash, current_app, session
+from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash, current_app, session, make_response
 from . import db
 from .models import SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift, User
 from datetime import datetime, time, timedelta, date
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy.orm import joinedload, selectinload # For eager loading
+
+# For CSV export
+import csv
+import io
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # Option 1 - copilot 
 """
@@ -593,3 +600,169 @@ def generate_slots_and_assign_action(period_id):
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
 # ... (manage_job_roles_for_period GET part needs to retrieve and pass these messages) ...
+
+# Add these new export routes at the end of your routes.py file, before the final comment
+@main_bp.route('/period/<int:period_id>/export_schedule_csv')
+def export_schedule_csv(period_id):
+    """Export the schedule for a specific period as CSV"""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    # Get all scheduled assignments for this period
+    scheduled_assignments = ScheduledShift.query.options(
+        joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role),
+        joinedload(ScheduledShift.worker_assigned)
+    ).join(ShiftDefinition).\
+    filter(ShiftDefinition.scheduling_period_id == period.id).\
+    order_by(ShiftDefinition.slot_start_datetime, ShiftDefinition.job_role_id, ShiftDefinition.instance_number).all()
+    
+    # Create CSV data
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow([
+        'Role & Instance',
+        'Start Date',
+        'Start Time', 
+        'End Date',
+        'End Time',
+        'Duration',
+        'Assigned Worker',
+        'Worker Email'
+    ])
+    
+    # Write data rows
+    for assignment in scheduled_assignments:
+        slot = assignment.defined_slot
+        worker = assignment.worker_assigned
+        
+        writer.writerow([
+            slot.name,
+            slot.slot_start_datetime.strftime('%Y-%m-%d'),
+            slot.slot_start_datetime.strftime('%H:%M'),
+            slot.slot_end_datetime.strftime('%Y-%m-%d'), 
+            slot.slot_end_datetime.strftime('%H:%M'),
+            slot.duration_hours_minutes_str,
+            worker.name if worker else 'UNASSIGNED',
+            worker.email if worker and worker.email else ''
+        ])
+    
+    # Create response
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename=schedule_{period.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.csv'
+    
+    return response
+
+@main_bp.route('/period/<int:period_id>/export_schedule_excel')
+def export_schedule_excel(period_id):
+    """Export the schedule for a specific period as Excel"""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    # Get all scheduled assignments for this period
+    scheduled_assignments = ScheduledShift.query.options(
+        joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role),
+        joinedload(ScheduledShift.worker_assigned)
+    ).join(ShiftDefinition).\
+    filter(ShiftDefinition.scheduling_period_id == period.id).\
+    order_by(ShiftDefinition.slot_start_datetime, ShiftDefinition.job_role_id, ShiftDefinition.instance_number).all()
+    
+    # Create workbook and worksheet
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Schedule"
+    
+    # Define styles
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    unassigned_fill = PatternFill(start_color="FFE6E6", end_color="FFE6E6", fill_type="solid")
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Add title
+    ws.merge_cells('A1:H1')
+    title_cell = ws['A1']
+    title_cell.value = f"Schedule for {period.name}"
+    title_cell.font = Font(bold=True, size=16)
+    title_cell.alignment = Alignment(horizontal='center')
+    
+    # Add period info
+    ws.merge_cells('A2:H2')
+    period_cell = ws['A2']
+    period_cell.value = f"Period: {period.period_start_datetime.strftime('%Y-%m-%d %H:%M')} to {period.period_end_datetime.strftime('%Y-%m-%d %H:%M')}"
+    period_cell.alignment = Alignment(horizontal='center')
+    
+    # Add headers starting from row 4
+    headers = [
+        'Role & Instance',
+        'Start Date',
+        'Start Time',
+        'End Date', 
+        'End Time',
+        'Duration',
+        'Assigned Worker',
+        'Worker Email'
+    ]
+    
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center')
+    
+    # Add data starting from row 5
+    for row, assignment in enumerate(scheduled_assignments, 5):
+        slot = assignment.defined_slot
+        worker = assignment.worker_assigned
+        
+        data = [
+            slot.name,
+            slot.slot_start_datetime.strftime('%Y-%m-%d'),
+            slot.slot_start_datetime.strftime('%H:%M'),
+            slot.slot_end_datetime.strftime('%Y-%m-%d'),
+            slot.slot_end_datetime.strftime('%H:%M'),
+            slot.duration_hours_minutes_str,
+            worker.name if worker else 'UNASSIGNED',
+            worker.email if worker and worker.email else ''
+        ]
+        
+        for col, value in enumerate(data, 1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = border
+            
+            # Highlight unassigned shifts
+            if not worker and col <= 8:
+                cell.fill = unassigned_fill
+    
+    # Auto-adjust column widths
+    from openpyxl.utils import get_column_letter
+    
+    for col_num in range(1, 9):  # We have 8 columns (A to H)
+        max_length = 0
+        for row in ws.iter_rows(min_col=col_num, max_col=col_num):
+            for cell in row:
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+        adjusted_width = min(max_length + 2, 50)
+        column_letter = get_column_letter(col_num)
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    # Create response
+    response = make_response(output.read())
+    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    response.headers['Content-Disposition'] = f'attachment; filename=schedule_{period.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    
+    return response
