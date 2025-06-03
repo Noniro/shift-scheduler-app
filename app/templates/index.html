@@ -56,7 +56,19 @@
                     </div>
 
                     {% if scheduled_assignments %}
-                        <p class="text-muted"><small>Total Assigned Slots: {{ scheduled_assignments|length }}</small></p>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <p class="text-muted mb-0"><small>Total Assigned Slots: {{ scheduled_assignments|length }}</small></p>
+                            <div class="btn-group" role="group" aria-label="Export options">
+                                <a href="{{ url_for('main.export_schedule_csv', period_id=active_period.id) }}" 
+                                   class="btn btn-success btn-sm" title="Export as CSV">
+                                    📊 Export CSV
+                                </a>
+                                <a href="{{ url_for('main.export_schedule_excel', period_id=active_period.id) }}" 
+                                   class="btn btn-success btn-sm" title="Export as Excel">
+                                    📈 Export Excel
+                                </a>
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-striped table-sm table-hover">
                                 <thead class="thead-dark">
