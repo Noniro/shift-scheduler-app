@@ -113,6 +113,24 @@ def get_active_period():
         return SchedulingPeriod.query.get(active_period_id)
     return None
 
+
+    # Adding time restriction for job roles
+def is_time_within_role_restrictions(check_time, role):
+    """Check if a given time falls within the role's working hours"""
+    if not role.has_time_restrictions():
+        return True  # No restrictions means all times are valid
+    
+    check_time_only = check_time.time()
+    
+    if role.is_overnight_shift:
+        # For overnight shifts (e.g., 22:00 - 06:00)
+        # Valid if time >= start_time OR time <= end_time
+        return check_time_only >= role.work_start_time or check_time_only <= role.work_end_time
+    else:
+        # For same-day shifts (e.g., 09:00 - 17:00)
+        # Valid if start_time <= time <= end_time
+        return role.work_start_time <= check_time_only <= role.work_end_time
+
 # --- User Name Routes ---
 @main_bp.route('/', methods=['GET', 'POST'])
 def index():
@@ -251,30 +269,120 @@ def manage_job_roles_for_period(period_id):
         session['active_period_id'] = period_id; session.permanent = True
         flash(f"Active period set to '{period.name}'.", "info")
 
+    # if request.method == 'POST':
+    #     # ... (POST logic for adding a job role - REMAINS THE SAME) ...
+    #     try:
+    #         role_name = request.form.get('role_name')
+    #         number_needed_str = request.form.get('number_needed', '1')
+    #         days_str = request.form.get('duration_days', '0')
+    #         hours_str = request.form.get('duration_hours', '0')
+    #         minutes_str = request.form.get('duration_minutes', '0')
+    #         if not role_name or not role_name.strip(): flash("Job role name is required.", "danger")
+    #         else:
+    #             role_name = role_name.strip(); number_needed = int(number_needed_str)
+    #             days = int(days_str); hours = int(hours_str); minutes = int(minutes_str)
+    #             if number_needed < 1: flash("Number needed must be at least 1.", "danger")
+    #             else:
+    #                 total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
+    #                 if total_duration_minutes < 20: flash("Minimum shift duration for a role is 20 minutes.", "danger")
+    #                 elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+    #                 elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): flash(f"Job role '{role_name}' already exists for this period.", "warning")
+    #                 else:
+    #                     new_role = JobRole(name=role_name, number_needed=number_needed, shift_duration_days=days, shift_duration_hours=hours, shift_duration_minutes=minutes, scheduling_period_id=period.id)
+    #                     db.session.add(new_role); db.session.commit(); flash(f"Job Role '{role_name}' added to period '{period.name}'.", "success")
+    #     except ValueError: flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
+    #     except Exception as e: db.session.rollback(); flash(f"Error adding job role: {e}", "danger"); current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
+    #     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+    
+    # Update your job role creation logic in routes.py
+    # Find the manage_job_roles_for_period POST section and replace it with this:
+
     if request.method == 'POST':
-        # ... (POST logic for adding a job role - REMAINS THE SAME) ...
         try:
             role_name = request.form.get('role_name')
             number_needed_str = request.form.get('number_needed', '1')
             days_str = request.form.get('duration_days', '0')
             hours_str = request.form.get('duration_hours', '0')
             minutes_str = request.form.get('duration_minutes', '0')
-            if not role_name or not role_name.strip(): flash("Job role name is required.", "danger")
+            
+            # NEW: Time constraint fields
+            has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
+            work_start_time_str = request.form.get('work_start_time')
+            work_end_time_str = request.form.get('work_end_time')
+            is_overnight_shift = request.form.get('is_overnight_shift') == 'on'
+            
+            if not role_name or not role_name.strip(): 
+                flash("Job role name is required.", "danger")
             else:
-                role_name = role_name.strip(); number_needed = int(number_needed_str)
-                days = int(days_str); hours = int(hours_str); minutes = int(minutes_str)
-                if number_needed < 1: flash("Number needed must be at least 1.", "danger")
+                role_name = role_name.strip()
+                number_needed = int(number_needed_str)
+                days = int(days_str)
+                hours = int(hours_str) 
+                minutes = int(minutes_str)
+                
+                if number_needed < 1: 
+                    flash("Number needed must be at least 1.", "danger")
                 else:
                     total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
-                    if total_duration_minutes < 20: flash("Minimum shift duration for a role is 20 minutes.", "danger")
-                    elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
-                    elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): flash(f"Job role '{role_name}' already exists for this period.", "warning")
+                    if total_duration_minutes < 20: 
+                        flash("Minimum shift duration for a role is 20 minutes.", "danger")
+                    elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: 
+                        flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+                    elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): 
+                        flash(f"Job role '{role_name}' already exists for this period.", "warning")
                     else:
-                        new_role = JobRole(name=role_name, number_needed=number_needed, shift_duration_days=days, shift_duration_hours=hours, shift_duration_minutes=minutes, scheduling_period_id=period.id)
-                        db.session.add(new_role); db.session.commit(); flash(f"Job Role '{role_name}' added to period '{period.name}'.", "success")
-        except ValueError: flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
-        except Exception as e: db.session.rollback(); flash(f"Error adding job role: {e}", "danger"); current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
+                        # Parse time constraints if provided
+                        work_start_time = None
+                        work_end_time = None
+                        
+                        if has_time_restrictions:
+                            if not work_start_time_str or not work_end_time_str:
+                                flash("Both start and end times are required when restricting working hours.", "danger")
+                                return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                            
+                            try:
+                                work_start_time = datetime.strptime(work_start_time_str, '%H:%M').time()
+                                work_end_time = datetime.strptime(work_end_time_str, '%H:%M').time()
+                                
+                                # Validate time logic
+                                if not is_overnight_shift and work_end_time <= work_start_time:
+                                    flash("End time must be after start time for same-day shifts.", "danger")
+                                    return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                                elif is_overnight_shift and work_end_time >= work_start_time:
+                                    flash("For overnight shifts, end time should be earlier than start time (next day).", "warning")
+                                    
+                            except ValueError:
+                                flash("Invalid time format. Please use HH:MM format.", "danger")
+                                return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                        
+                        new_role = JobRole(
+                            name=role_name, 
+                            number_needed=number_needed, 
+                            shift_duration_days=days, 
+                            shift_duration_hours=hours, 
+                            shift_duration_minutes=minutes, 
+                            scheduling_period_id=period.id,
+                            work_start_time=work_start_time,
+                            work_end_time=work_end_time,
+                            is_overnight_shift=is_overnight_shift
+                        )
+                        db.session.add(new_role)
+                        db.session.commit()
+                        
+                        time_info = ""
+                        if has_time_restrictions:
+                            time_info = f" (Working hours: {work_start_time_str} - {work_end_time_str}{'next day' if is_overnight_shift else ''})"
+                        
+                        flash(f"Job Role '{role_name}' added to period '{period.name}'.{time_info}", "success")
+                        
+        except ValueError: 
+            flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
+        except Exception as e: 
+            db.session.rollback()
+            flash(f"Error adding job role: {e}", "danger")
+            current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
 
     job_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
     generated_slots = ShiftDefinition.query.options(joinedload(ShiftDefinition.job_role))\
@@ -306,6 +414,59 @@ def delete_job_role(period_id, role_id):
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
 
 
+# @main_bp.route('/period/<int:period_id>/generate_slots', methods=['POST'])
+# def generate_coverage_slots_for_period(period_id):
+#     period = SchedulingPeriod.query.get_or_404(period_id)
+#     job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
+
+#     if not job_roles_for_period:
+#         flash("No job roles defined for this period. Cannot generate coverage slots.", "warning")
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
+#                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
+#     if ids_to_delete_assignments:
+#         ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
+#     ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
+#     db.session.commit()
+
+#     total_new_slots_generated = 0
+#     for role in job_roles_for_period:
+#         role_slots_generated = 0
+#         current_dt_for_role = period.period_start_datetime
+#         duration = role.get_duration_timedelta()
+
+#         if duration.total_seconds() <= 0:
+#             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration."); continue
+
+#         max_iter = 5000; iter_count = 0 
+#         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
+#             iter_count += 1
+#             slot_start = current_dt_for_role
+#             slot_end = current_dt_for_role + duration
+#             if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
+            
+#             if slot_start < slot_end:
+#                 for i in range(1, role.number_needed + 1):
+#                     new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
+#                                                instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
+#                     db.session.add(new_slot)
+#                     role_slots_generated +=1
+#             current_dt_for_role = slot_end
+#             if current_dt_for_role >= period.period_end_datetime: break
+#         if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}'.", "warning")
+#         total_new_slots_generated += role_slots_generated
+
+#     if total_new_slots_generated > 0:
+#         try:
+#             db.session.commit(); flash(f"{total_new_slots_generated} slots generated for '{period.name}'.", "success")
+#         except Exception as e:
+#             db.session.rollback(); flash(f"Error committing slots: {e}", "danger")
+#             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
+#     else:
+#         flash("No new slots generated. Check role durations.", "warning")
+#     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
 @main_bp.route('/period/<int:period_id>/generate_slots', methods=['POST'])
 def generate_coverage_slots_for_period(period_id):
     period = SchedulingPeriod.query.get_or_404(period_id)
@@ -329,36 +490,115 @@ def generate_coverage_slots_for_period(period_id):
         duration = role.get_duration_timedelta()
 
         if duration.total_seconds() <= 0:
-            current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration."); continue
+            current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration.")
+            continue
 
-        max_iter = 5000; iter_count = 0 
+        max_iter = 5000
+        iter_count = 0 
+        
         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
             iter_count += 1
+            
+            # Check if current time is within role's working hours
+            if role.has_time_restrictions():
+                if not is_time_within_role_restrictions(current_dt_for_role, role):
+                    # Move to next valid time slot
+                    if role.is_overnight_shift:
+                        # For overnight shifts, find next start time
+                        next_start = current_dt_for_role.replace(
+                            hour=role.work_start_time.hour, 
+                            minute=role.work_start_time.minute, 
+                            second=0, 
+                            microsecond=0
+                        )
+                        if next_start <= current_dt_for_role:
+                            next_start += timedelta(days=1)
+                        current_dt_for_role = next_start
+                    else:
+                        # For day shifts, find next start time
+                        next_start = current_dt_for_role.replace(
+                            hour=role.work_start_time.hour, 
+                            minute=role.work_start_time.minute, 
+                            second=0, 
+                            microsecond=0
+                        )
+                        if next_start <= current_dt_for_role:
+                            next_start += timedelta(days=1)
+                        current_dt_for_role = next_start
+                    continue
+            
             slot_start = current_dt_for_role
             slot_end = current_dt_for_role + duration
-            if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
+            
+            # For time-restricted roles, ensure slot doesn't exceed working hours
+            if role.has_time_restrictions():
+                if role.is_overnight_shift:
+                    # For overnight shifts, check if slot end goes beyond end time (next day)
+                    next_day_end = (slot_start.replace(
+                        hour=role.work_end_time.hour, 
+                        minute=role.work_end_time.minute, 
+                        second=0, 
+                        microsecond=0
+                    ) + timedelta(days=1))
+                    
+                    if slot_end > next_day_end:
+                        slot_end = next_day_end
+                else:
+                    # For day shifts, check if slot end goes beyond end time (same day)
+                    same_day_end = slot_start.replace(
+                        hour=role.work_end_time.hour, 
+                        minute=role.work_end_time.minute, 
+                        second=0, 
+                        microsecond=0
+                    )
+                    
+                    if slot_end > same_day_end:
+                        slot_end = same_day_end
+            
+            # Ensure slot doesn't exceed period end
+            if slot_end > period.period_end_datetime:
+                slot_end = period.period_end_datetime
             
             if slot_start < slot_end:
                 for i in range(1, role.number_needed + 1):
-                    new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
-                                               instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
+                    new_slot = ShiftDefinition(
+                        slot_start_datetime=slot_start, 
+                        slot_end_datetime=slot_end,
+                        instance_number=i, 
+                        scheduling_period_id=period.id, 
+                        job_role_id=role.id
+                    )
                     db.session.add(new_slot)
-                    role_slots_generated +=1
+                    role_slots_generated += 1
+            
+            # Move to next slot time
             current_dt_for_role = slot_end
-            if current_dt_for_role >= period.period_end_datetime: break
-        if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}'.", "warning")
+            
+            if current_dt_for_role >= period.period_end_datetime:
+                break
+                
+        if iter_count >= max_iter: 
+            flash(f"Max iterations for role '{role.name}'.", "warning")
+        
         total_new_slots_generated += role_slots_generated
+        
+        # Log information about what was generated
+        if role.has_time_restrictions():
+            current_app.logger.info(f"Generated {role_slots_generated} time-restricted slots for role '{role.name}' ({role.get_working_hours_str()})")
+        else:
+            current_app.logger.info(f"Generated {role_slots_generated} all-day slots for role '{role.name}'")
 
     if total_new_slots_generated > 0:
         try:
-            db.session.commit(); flash(f"{total_new_slots_generated} slots generated for '{period.name}'.", "success")
+            db.session.commit()
+            flash(f"{total_new_slots_generated} slots generated for '{period.name}'.", "success")
         except Exception as e:
-            db.session.rollback(); flash(f"Error committing slots: {e}", "danger")
+            db.session.rollback()
+            flash(f"Error committing slots: {e}", "danger")
             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
     else:
         flash("No new slots generated. Check role durations.", "warning")
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-
 
 # --- Worker and Constraint Routes ---
 @main_bp.route('/manage_workers', methods=['GET', 'POST'])
@@ -476,6 +716,129 @@ def add_constraint(worker_id):
     return redirect(target_redirect)
 
 
+# @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
+# def generate_slots_and_assign_action(period_id):
+#     period = SchedulingPeriod.query.get_or_404(period_id)
+#     current_app.logger.info(f"Clearing old data for period {period.id} ('{period.name}')")
+#     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
+#                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
+#     if ids_to_delete_assignments:
+#         ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
+#     ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
+#     db.session.commit()
+#     current_app.logger.info(f"Old data cleared for period {period.id}.")
+
+#     job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
+#     if not job_roles_for_period:
+#         flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     total_new_slots_generated = 0
+#     generated_slot_objects = []
+#     for role in job_roles_for_period:
+#         role_slots_generated_this_role = 0
+#         current_dt_for_role = period.period_start_datetime
+#         duration = role.get_duration_timedelta()
+#         if duration.total_seconds() <= 0:
+#             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration for period {period.id}.")
+#             flash(f"Job Role '{role.name}' has zero/negative shift duration and was skipped for slot generation.", "warning")
+#             continue
+#         max_iter = 5000; iter_count = 0
+#         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
+#             iter_count += 1; slot_start = current_dt_for_role; slot_end = current_dt_for_role + duration
+#             if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
+#             if slot_start < slot_end:
+#                 for i in range(1, role.number_needed + 1):
+#                     new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
+#                                                instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
+#                     db.session.add(new_slot); generated_slot_objects.append(new_slot); role_slots_generated_this_role +=1
+#             current_dt_for_role = slot_end
+#             if current_dt_for_role >= period.period_end_datetime: break
+#         if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}' during slot generation.", "warning")
+#         total_new_slots_generated += role_slots_generated_this_role
+#     if total_new_slots_generated > 0:
+#         try:
+#             db.session.commit(); flash(f"{total_new_slots_generated} coverage slots generated for '{period.name}'. Attempting assignment...", "info")
+#             current_app.logger.info(f"{total_new_slots_generated} ShiftDefinition slots committed for period {period.id}.")
+#         except Exception as e:
+#             db.session.rollback(); flash(f"Error committing generated slots: {e}", "danger")
+#             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
+#             return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+#     else:
+#         flash("No new coverage slots were generated. Check role durations. No assignments will be made.", "warning")
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     # --- Step 3: Prepare for and run assignment algorithm ---
+#     workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
+#     if not workers:
+#         flash("No workers found. Slots generated, but assignments cannot proceed.", "warning")
+#         # Store this message to be displayed on the next page, maybe in session for one request
+#         session['assignment_details'] = [("warning", "No workers found in the system to perform assignments.")]
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     assignments_to_make = []
+#     for slot_def in generated_slot_objects:
+#         if slot_def.id is None: continue
+#         assignments_to_make.append(ScheduledShift(shift_definition_id=slot_def.id))
+#     if assignments_to_make:
+#         db.session.add_all(assignments_to_make); db.session.commit()
+#         current_app.logger.info(f"{len(assignments_to_make)} ScheduledShift placeholders created for period {period.id}.")
+#     else:
+#         flash("No assignment placeholders created, though slots generated. Unexpected error.", "danger")
+#         current_app.logger.error(f"Failed to create ScheduledShift placeholders for period {period.id} despite {total_new_slots_generated} slots.")
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     from .algorithm import assign_shifts_fairly
+#     all_pending_assignments = ScheduledShift.query.options(
+#             joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role)
+#         ).join(ShiftDefinition)\
+#         .filter(ShiftDefinition.scheduling_period_id == period.id, ScheduledShift.worker_id.is_(None))\
+#         .all()
+    
+#     current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
+#     assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
+    
+#     # ---- MODIFIED MESSAGE HANDLING ----
+#     # Store detailed messages in session to be picked up by the next request (the redirect)
+#     # This is a common pattern for Post/Redirect/Get with complex feedback.
+#     detailed_assignment_warnings = []
+#     error_count = 0
+#     warning_summary_count = 0 # Count for summary message
+
+#     for msg_type, msg_text in algo_messages_raw:
+#         if msg_type == "error":
+#             error_count += 1
+#             current_app.logger.error(f"Algo Error: {msg_text}")
+#             # Flash critical errors immediately
+#             flash(f"Critical Algorithm Error: {msg_text}", "danger")
+#         elif msg_type == "warning": # Typically "Could not assign..."
+#             warning_summary_count +=1
+#             detailed_assignment_warnings.append(msg_text) # Collect for detailed display
+#             current_app.logger.warning(f"Algo Warning: {msg_text}")
+#         elif msg_type == "success":
+#             flash(msg_text, "success")
+#         else: # info or other types
+#             flash(msg_text, msg_type)
+    
+#     session['assignment_details'] = detailed_assignment_warnings # Store details in session
+
+#     if error_count > 0:
+#         flash(f"{error_count} critical errors occurred during assignment. Check server logs.", "danger")
+    
+#     if warning_summary_count > 0:
+#         flash(f"Assignment complete: {warning_summary_count} slots could not be filled. See details below or check server logs.", "warning")
+    
+#     if assignment_successful and error_count == 0 and warning_summary_count == 0:
+#         flash("All shifts assigned successfully!", "success")
+#     elif not assignment_successful and error_count == 0 and warning_summary_count == 0:
+#         flash("Shift assignment process completed, but the algorithm reported not all shifts filled (no specific warnings).", "warning")
+#     elif total_new_slots_generated > 0 and not all_pending_assignments and (error_count > 0 or warning_summary_count > 0):
+#         flash("Slots were generated, but assignment step encountered issues before processing.", "danger")
+#     # A general info message isn't needed if specific summaries are given
+#     # ---- END OF MODIFIED MESSAGE HANDLING ----
+
+#     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
 @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
 def generate_slots_and_assign_action(period_id):
     period = SchedulingPeriod.query.get_or_404(period_id)
@@ -499,29 +862,116 @@ def generate_slots_and_assign_action(period_id):
         role_slots_generated_this_role = 0
         current_dt_for_role = period.period_start_datetime
         duration = role.get_duration_timedelta()
+        
         if duration.total_seconds() <= 0:
             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration for period {period.id}.")
             flash(f"Job Role '{role.name}' has zero/negative shift duration and was skipped for slot generation.", "warning")
             continue
-        max_iter = 5000; iter_count = 0
+            
+        max_iter = 5000
+        iter_count = 0
+        
         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
-            iter_count += 1; slot_start = current_dt_for_role; slot_end = current_dt_for_role + duration
-            if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
+            iter_count += 1
+            
+            # Check if current time is within role's working hours
+            if role.has_time_restrictions():
+                if not is_time_within_role_restrictions(current_dt_for_role, role):
+                    # Move to next valid time slot
+                    if role.is_overnight_shift:
+                        # For overnight shifts, find next start time
+                        next_start = current_dt_for_role.replace(
+                            hour=role.work_start_time.hour, 
+                            minute=role.work_start_time.minute, 
+                            second=0, 
+                            microsecond=0
+                        )
+                        if next_start <= current_dt_for_role:
+                            next_start += timedelta(days=1)
+                        current_dt_for_role = next_start
+                    else:
+                        # For day shifts, find next start time
+                        next_start = current_dt_for_role.replace(
+                            hour=role.work_start_time.hour, 
+                            minute=role.work_start_time.minute, 
+                            second=0, 
+                            microsecond=0
+                        )
+                        if next_start <= current_dt_for_role:
+                            next_start += timedelta(days=1)
+                        current_dt_for_role = next_start
+                    continue
+            
+            slot_start = current_dt_for_role
+            slot_end = current_dt_for_role + duration
+            
+            # For time-restricted roles, ensure slot doesn't exceed working hours
+            if role.has_time_restrictions():
+                if role.is_overnight_shift:
+                    # For overnight shifts, check if slot end goes beyond end time (next day)
+                    next_day_end = (slot_start.replace(
+                        hour=role.work_end_time.hour, 
+                        minute=role.work_end_time.minute, 
+                        second=0, 
+                        microsecond=0
+                    ) + timedelta(days=1))
+                    
+                    if slot_end > next_day_end:
+                        slot_end = next_day_end
+                else:
+                    # For day shifts, check if slot end goes beyond end time (same day)
+                    same_day_end = slot_start.replace(
+                        hour=role.work_end_time.hour, 
+                        minute=role.work_end_time.minute, 
+                        second=0, 
+                        microsecond=0
+                    )
+                    
+                    if slot_end > same_day_end:
+                        slot_end = same_day_end
+            
+            # Ensure slot doesn't exceed period end
+            if slot_end > period.period_end_datetime:
+                slot_end = period.period_end_datetime
+            
             if slot_start < slot_end:
                 for i in range(1, role.number_needed + 1):
-                    new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
-                                               instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
-                    db.session.add(new_slot); generated_slot_objects.append(new_slot); role_slots_generated_this_role +=1
+                    new_slot = ShiftDefinition(
+                        slot_start_datetime=slot_start, 
+                        slot_end_datetime=slot_end,
+                        instance_number=i, 
+                        scheduling_period_id=period.id, 
+                        job_role_id=role.id
+                    )
+                    db.session.add(new_slot)
+                    generated_slot_objects.append(new_slot)
+                    role_slots_generated_this_role += 1
+            
+            # Move to next slot time
             current_dt_for_role = slot_end
-            if current_dt_for_role >= period.period_end_datetime: break
-        if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}' during slot generation.", "warning")
+            
+            if current_dt_for_role >= period.period_end_datetime:
+                break
+                
+        if iter_count >= max_iter: 
+            flash(f"Max iterations for role '{role.name}' during slot generation.", "warning")
+        
         total_new_slots_generated += role_slots_generated_this_role
+        
+        # Log information about what was generated
+        if role.has_time_restrictions():
+            current_app.logger.info(f"Generated {role_slots_generated_this_role} time-restricted slots for role '{role.name}' ({role.get_working_hours_str()})")
+        else:
+            current_app.logger.info(f"Generated {role_slots_generated_this_role} all-day slots for role '{role.name}'")
+    
     if total_new_slots_generated > 0:
         try:
-            db.session.commit(); flash(f"{total_new_slots_generated} coverage slots generated for '{period.name}'. Attempting assignment...", "info")
+            db.session.commit()
+            flash(f"{total_new_slots_generated} coverage slots generated for '{period.name}'. Attempting assignment...", "info")
             current_app.logger.info(f"{total_new_slots_generated} ShiftDefinition slots committed for period {period.id}.")
         except Exception as e:
-            db.session.rollback(); flash(f"Error committing generated slots: {e}", "danger")
+            db.session.rollback()
+            flash(f"Error committing generated slots: {e}", "danger")
             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
             return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
     else:
@@ -538,10 +988,13 @@ def generate_slots_and_assign_action(period_id):
 
     assignments_to_make = []
     for slot_def in generated_slot_objects:
-        if slot_def.id is None: continue
+        if slot_def.id is None: 
+            continue
         assignments_to_make.append(ScheduledShift(shift_definition_id=slot_def.id))
+    
     if assignments_to_make:
-        db.session.add_all(assignments_to_make); db.session.commit()
+        db.session.add_all(assignments_to_make)
+        db.session.commit()
         current_app.logger.info(f"{len(assignments_to_make)} ScheduledShift placeholders created for period {period.id}.")
     else:
         flash("No assignment placeholders created, though slots generated. Unexpected error.", "danger")
@@ -572,7 +1025,7 @@ def generate_slots_and_assign_action(period_id):
             # Flash critical errors immediately
             flash(f"Critical Algorithm Error: {msg_text}", "danger")
         elif msg_type == "warning": # Typically "Could not assign..."
-            warning_summary_count +=1
+            warning_summary_count += 1
             detailed_assignment_warnings.append(msg_text) # Collect for detailed display
             current_app.logger.warning(f"Algo Warning: {msg_text}")
         elif msg_type == "success":

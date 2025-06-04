@@ -21,6 +21,30 @@ class SchedulingPeriod(db.Model):
     # shift_definitions relationship defined via backref from ShiftDefinition
     def __repr__(self): return f'<SchedulingPeriod {self.name} ({self.id})>'
 
+# class JobRole(db.Model):
+#     __tablename__ = 'job_role'
+#     id = db.Column(db.Integer, primary_key=True)
+#     name = db.Column(db.String(100), nullable=False) # e.g., "Cook", "Servant"
+#     number_needed = db.Column(db.Integer, default=1, nullable=False) # Number needed simultaneously
+#     shift_duration_days = db.Column(db.Integer, default=0, nullable=False)
+#     shift_duration_hours = db.Column(db.Integer, default=0, nullable=False)
+#     shift_duration_minutes = db.Column(db.Integer, default=0, nullable=False)
+#     scheduling_period_id = db.Column(db.Integer, db.ForeignKey('scheduling_period.id', ondelete="CASCADE"), nullable=False)
+#     scheduling_period = db.relationship('SchedulingPeriod', backref=db.backref('job_roles', lazy='dynamic', cascade="all, delete-orphan"))
+#     # defined_slots relationship via backref from ShiftDefinition
+#     # qualified_workers relationship via backref from Worker through association table
+
+#     def get_duration_timedelta(self):
+#         return timedelta(
+#             days=self.shift_duration_days, 
+#             hours=self.shift_duration_hours, 
+#             minutes=self.shift_duration_minutes
+#         )
+#     def __repr__(self): return f'<JobRole {self.name} (Period: {self.scheduling_period_id}, Needed: {self.number_needed})>'
+
+# Add these fields to your JobRole class in models.py
+# Find the JobRole class and add these new fields:
+
 class JobRole(db.Model):
     __tablename__ = 'job_role'
     id = db.Column(db.Integer, primary_key=True)
@@ -29,6 +53,12 @@ class JobRole(db.Model):
     shift_duration_days = db.Column(db.Integer, default=0, nullable=False)
     shift_duration_hours = db.Column(db.Integer, default=0, nullable=False)
     shift_duration_minutes = db.Column(db.Integer, default=0, nullable=False)
+    
+    # NEW FIELDS FOR TIME CONSTRAINTS
+    work_start_time = db.Column(db.Time, nullable=True)  # e.g., 22:00 for night shift
+    work_end_time = db.Column(db.Time, nullable=True)    # e.g., 04:00 for night shift
+    is_overnight_shift = db.Column(db.Boolean, default=False, nullable=False)  # True if shift crosses midnight
+    
     scheduling_period_id = db.Column(db.Integer, db.ForeignKey('scheduling_period.id', ondelete="CASCADE"), nullable=False)
     scheduling_period = db.relationship('SchedulingPeriod', backref=db.backref('job_roles', lazy='dynamic', cascade="all, delete-orphan"))
     # defined_slots relationship via backref from ShiftDefinition
@@ -40,7 +70,26 @@ class JobRole(db.Model):
             hours=self.shift_duration_hours, 
             minutes=self.shift_duration_minutes
         )
-    def __repr__(self): return f'<JobRole {self.name} (Period: {self.scheduling_period_id}, Needed: {self.number_needed})>'
+        
+    def has_time_restrictions(self):
+        """Check if this job role has specific working hours"""
+        return self.work_start_time is not None and self.work_end_time is not None
+        
+    def get_working_hours_str(self):
+        """Get a string representation of working hours"""
+        if not self.has_time_restrictions():
+            return "All day"
+        
+        start_str = self.work_start_time.strftime('%H:%M')
+        end_str = self.work_end_time.strftime('%H:%M')
+        
+        if self.is_overnight_shift:
+            return f"{start_str} - {end_str} (next day)"
+        else:
+            return f"{start_str} - {end_str}"
+    
+    def __repr__(self): 
+        return f'<JobRole {self.name} (Period: {self.scheduling_period_id}, Needed: {self.number_needed})>'
 
 class Worker(db.Model):
     __tablename__ = 'worker'
