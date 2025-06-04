@@ -50,7 +50,7 @@
         <h4>Existing Workers <span class="badge badge-secondary">{{ workers|length }}</span></h4>
         {% if workers %}
             <ul class="list-group">
-            {% for worker_iter in workers %} {# Changed loop variable to avoid conflict with outer 'worker' if any #}
+            {% for worker_iter in workers %}
                 <li class="list-group-item">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -61,6 +61,7 @@
                         </div>
                         <div>
                             <button class="btn btn-sm btn-info mr-1" data-toggle="modal" data-target="#constraintModal-{{ worker_iter.id }}">Add Unavailability</button>
+                            <button class="btn btn-sm btn-secondary mr-1" data-toggle="modal" data-target="#viewConstraintsModal-{{ worker_iter.id }}">View Constraints</button>
                             <button class="btn btn-sm btn-warning mr-1" data-toggle="modal" data-target="#rolesModal-{{ worker_iter.id }}">Edit Roles</button>
                             <form method="POST" action="{{ url_for('main.delete_worker', worker_id=worker_iter.id) }}" style="display: inline;">
                                 <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('DELETE worker \'{{ worker_iter.name }}\' and ALL their data? This cannot be undone.');">Delete</button>
@@ -78,20 +79,155 @@
                     {% endif %}
                 </li>
 
-                <!-- Constraint Modal for worker -->
+                <!-- Enhanced Constraint Modal for worker -->
                 <div class="modal fade" id="constraintModal-{{ worker_iter.id }}" tabindex="-1" role="dialog">
-                    <div class="modal-dialog" role="document"><div class="modal-content"><div class="modal-header">
-                        <h5 class="modal-title">Unavailability for {{ worker_iter.name }}</h5><button type="button" class="close" data-dismiss="modal">×</button>
-                    </div><form method="POST" action="{{ url_for('main.add_constraint', worker_id=worker_iter.id) }}" class="needs-validation" novalidate>
-                        <input type="hidden" name="redirect_to" value="{{ url_for('main.manage_workers') }}">
-                        <div class="modal-body">
-                        <p>Specify dates when {{ worker_iter.name }} is unavailable (whole day).</p>
-                        <div class="form-group"><label for="csd_{{worker_iter.id}}">From Date:</label><input type="date" class="form-control" id="csd_{{worker_iter.id}}" name="constraint_start_date" required><div class="invalid-feedback">Required.</div></div>
-                        <div class="form-group"><label for="ced_{{worker_iter.id}}">To Date (inclusive):</label><input type="date" class="form-control" id="ced_{{worker_iter.id}}" name="constraint_end_date" required><div class="invalid-feedback">Required.</div></div>
-                        </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button><button type="submit" class="btn btn-primary">Add</button></div></form></div></div>
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Add Unavailability for {{ worker_iter.name }}</h5>
+                                <button type="button" class="close" data-dismiss="modal">×</button>
+                            </div>
+                            <form method="POST" action="{{ url_for('main.add_constraint', worker_id=worker_iter.id) }}" class="needs-validation" novalidate>
+                                <input type="hidden" name="redirect_to" value="{{ url_for('main.manage_workers') }}">
+                                <div class="modal-body">
+                                    <div class="form-group">
+                                        <label>Constraint Type:</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="constraint_type" id="full_day_{{ worker_iter.id }}" value="full_day" checked onchange="toggleConstraintType('{{ worker_iter.id }}')">
+                                            <label class="form-check-label" for="full_day_{{ worker_iter.id }}">
+                                                <strong>Full Day(s) Unavailable</strong> (e.g., vacation, sick days)
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="constraint_type" id="specific_hours_{{ worker_iter.id }}" value="specific_hours" onchange="toggleConstraintType('{{ worker_iter.id }}')">
+                                            <label class="form-check-label" for="specific_hours_{{ worker_iter.id }}">
+                                                <strong>Specific Hours Unavailable</strong> (e.g., doctor appointment, school pickup)
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Full Day Section -->
+                                    <div id="full_day_section_{{ worker_iter.id }}">
+                                        <h6>Full Day Unavailability</h6>
+                                        <div class="form-row">
+                                            <div class="form-group col-md-6">
+                                                <label for="constraint_start_date_{{ worker_iter.id }}">From Date:</label>
+                                                <input type="date" class="form-control" id="constraint_start_date_{{ worker_iter.id }}" name="constraint_start_date" required>
+                                                <div class="invalid-feedback">Required.</div>
+                                            </div>
+                                            <div class="form-group col-md-6">
+                                                <label for="constraint_end_date_{{ worker_iter.id }}">To Date (inclusive):</label>
+                                                <input type="date" class="form-control" id="constraint_end_date_{{ worker_iter.id }}" name="constraint_end_date" required>
+                                                <div class="invalid-feedback">Required.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Specific Hours Section -->
+                                    <div id="specific_hours_section_{{ worker_iter.id }}" style="display: none;">
+                                        <h6>Specific Hours Unavailability</h6>
+                                        <div class="form-row">
+                                            <div class="form-group col-md-6">
+                                                <label for="start_datetime_date_{{ worker_iter.id }}">Start Date:</label>
+                                                <input type="date" class="form-control" id="start_datetime_date_{{ worker_iter.id }}" name="start_datetime_date">
+                                                <div class="invalid-feedback">Required.</div>
+                                            </div>
+                                            <div class="form-group col-md-6">
+                                                <label for="end_datetime_date_{{ worker_iter.id }}">End Date:</label>
+                                                <input type="date" class="form-control" id="end_datetime_date_{{ worker_iter.id }}" name="end_datetime_date">
+                                                <div class="invalid-feedback">Required.</div>
+                                            </div>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group col-md-6">
+                                                <label for="start_datetime_time_{{ worker_iter.id }}">Start Time:</label>
+                                                <input type="time" class="form-control" id="start_datetime_time_{{ worker_iter.id }}" name="start_datetime_time" value="09:00">
+                                                <div class="invalid-feedback">Required.</div>
+                                            </div>
+                                            <div class="form-group col-md-6">
+                                                <label for="end_datetime_time_{{ worker_iter.id }}">End Time:</label>
+                                                <input type="time" class="form-control" id="end_datetime_time_{{ worker_iter.id }}" name="end_datetime_time" value="17:00">
+                                                <div class="invalid-feedback">Required.</div>
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-info">
+                                            <small><strong>Examples:</strong><br>
+                                            • Doctor appointment: 2025-06-05 09:00 - 2025-06-05 11:00<br>
+                                            • Evening unavailable: 2025-06-05 18:00 - 2025-06-05 23:59<br>
+                                            • Overnight unavailable: 2025-06-05 22:00 - 2025-06-06 06:00
+                                            </small>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="constraint_description_{{ worker_iter.id }}">Description (Optional):</label>
+                                        <input type="text" class="form-control" id="constraint_description_{{ worker_iter.id }}" name="constraint_description" placeholder="e.g., Doctor appointment, Vacation, School pickup">
+                                        <small class="text-muted">Helps you remember why this constraint was added</small>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                                    <button type="submit" class="btn btn-primary">Add Constraint</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Roles Modal for worker -->
+                <!-- View Constraints Modal -->
+                <div class="modal fade" id="viewConstraintsModal-{{ worker_iter.id }}" tabindex="-1" role="dialog">
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Constraints for {{ worker_iter.name }}</h5>
+                                <button type="button" class="close" data-dismiss="modal">×</button>
+                            </div>
+                            <div class="modal-body">
+                                {% if worker_iter.constraints.all() %}
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Type</th>
+                                                    <th>Period</th>
+                                                    <th>Duration</th>
+                                                    <th>Description</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for constraint in worker_iter.constraints.all() %}
+                                                <tr>
+                                                    <td>
+                                                        <span class="badge badge-pill {% if constraint.is_full_day_constraint() %}badge-warning{% else %}badge-info{% endif %}">
+                                                            {% if constraint.is_full_day_constraint() %}Full Day{% else %}Specific Hours{% endif %}
+                                                        </span>
+                                                    </td>
+                                                    <td><small>{{ constraint.get_constraint_description() }}</small></td>
+                                                    <td><small>{{ constraint.get_duration_str() }}</small></td>
+                                                    <td><small>{{ constraint.description or '-' }}</small></td>
+                                                    <td>
+                                                        <form method="POST" action="{{ url_for('main.delete_constraint', constraint_id=constraint.id) }}" style="display: inline;">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this constraint?');">Delete</button>
+                                                        </form>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                {% else %}
+                                    <p class="text-muted">No constraints defined for this worker.</p>
+                                {% endif %}
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Roles Modal for worker (same as before) -->
                 <div class="modal fade" id="rolesModal-{{ worker_iter.id }}" tabindex="-1" role="dialog">
                     <div class="modal-dialog modal-lg" role="document"><div class="modal-content"><div class="modal-header">
                         <h5 class="modal-title">Edit Qualified Roles for {{ worker_iter.name }}</h5><button type="button" class="close" data-dismiss="modal">×</button>
@@ -100,7 +236,7 @@
                         {% if active_period and all_job_roles_in_active_period %}
                             <p>Select roles {{ worker_iter.name }} is qualified for (for active period '{{active_period.name}}'):</p>
                             <div class="row">
-                            {% for role in all_job_roles_in_active_period %} {# Iterate through roles of active period #}
+                            {% for role in all_job_roles_in_active_period %}
                                 <div class="col-md-6">
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" name="qualified_roles" value="{{ role.id }}" id="role_{{ role.id }}_edit_{{worker_iter.id}}"
@@ -135,6 +271,41 @@
 
 {% block scripts %}{{ super() }}
 <script>
+function toggleConstraintType(workerId) {
+    const fullDayRadio = document.getElementById(`full_day_${workerId}`);
+    const fullDaySection = document.getElementById(`full_day_section_${workerId}`);
+    const specificHoursSection = document.getElementById(`specific_hours_section_${workerId}`);
+    
+    if (fullDayRadio.checked) {
+        fullDaySection.style.display = 'block';
+        specificHoursSection.style.display = 'none';
+        
+        // Make full day fields required
+        document.getElementById(`constraint_start_date_${workerId}`).required = true;
+        document.getElementById(`constraint_end_date_${workerId}`).required = true;
+        
+        // Make specific hours fields not required
+        document.getElementById(`start_datetime_date_${workerId}`).required = false;
+        document.getElementById(`start_datetime_time_${workerId}`).required = false;
+        document.getElementById(`end_datetime_date_${workerId}`).required = false;
+        document.getElementById(`end_datetime_time_${workerId}`).required = false;
+    } else {
+        fullDaySection.style.display = 'none';
+        specificHoursSection.style.display = 'block';
+        
+        // Make specific hours fields required
+        document.getElementById(`start_datetime_date_${workerId}`).required = true;
+        document.getElementById(`start_datetime_time_${workerId}`).required = true;
+        document.getElementById(`end_datetime_date_${workerId}`).required = true;
+        document.getElementById(`end_datetime_time_${workerId}`).required = true;
+        
+        // Make full day fields not required
+        document.getElementById(`constraint_start_date_${workerId}`).required = false;
+        document.getElementById(`constraint_end_date_${workerId}`).required = false;
+    }
+}
+
+// Bootstrap validation
 (function() {'use strict';window.addEventListener('load', function() {
 var forms=document.getElementsByClassName('needs-validation');
 Array.prototype.filter.call(forms,function(f){f.addEventListener('submit',function(e){
