@@ -693,27 +693,127 @@ def edit_worker_roles(worker_id):
     return redirect(url_for('main.manage_workers'))
 
 
+# Replace your add_constraint route in routes.py with this updated version:
+
 @main_bp.route('/worker/<int:worker_id>/add_constraint', methods=['POST'])
 def add_constraint(worker_id):
     worker = Worker.query.get_or_404(worker_id)
     target_redirect = request.form.get('redirect_to', url_for('main.manage_workers'))
+    
     try:
-        start_date_str = request.form.get('constraint_start_date'); end_date_str = request.form.get('constraint_end_date')
-        if not start_date_str or not end_date_str:
-            flash("Both start and end dates for unavailability are required.", "danger"); return redirect(target_redirect)
-        start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        if end_date_obj < start_date_obj:
-            flash("End date cannot be before start date.", "danger"); return redirect(target_redirect)
-        cs_dt = datetime.combine(start_date_obj, time.min); ce_dt = datetime.combine(end_date_obj, time.max)
-        constraint = Constraint(worker_id=worker.id, constraint_type="UNAVAILABLE_DAY_RANGE", start_datetime=cs_dt, end_datetime=ce_dt)
-        db.session.add(constraint); db.session.commit()
-        flash(f'Unavailability added for {worker.name}.', 'success')
-    except ValueError: flash("Invalid date format for unavailability.", "danger")
+        constraint_type = request.form.get('constraint_type')  # 'full_day' or 'specific_hours'
+        description = request.form.get('constraint_description', '').strip() or None
+        
+        if constraint_type == 'full_day':
+            # Handle full day constraints (existing logic)
+            start_date_str = request.form.get('constraint_start_date')
+            end_date_str = request.form.get('constraint_end_date')
+            
+            if not start_date_str or not end_date_str:
+                flash("Both start and end dates for unavailability are required.", "danger")
+                return redirect(target_redirect)
+                
+            start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            
+            if end_date_obj < start_date_obj:
+                flash("End date cannot be before start date.", "danger")
+                return redirect(target_redirect)
+                
+            # Set to full day (00:00 to 23:59)
+            cs_dt = datetime.combine(start_date_obj, time.min)
+            ce_dt = datetime.combine(end_date_obj, time.max)
+            constraint_type_db = "UNAVAILABLE_DAY_RANGE"
+            
+        elif constraint_type == 'specific_hours':
+            # Handle specific hours constraints (new functionality)
+            start_date_str = request.form.get('start_datetime_date')
+            start_time_str = request.form.get('start_datetime_time')
+            end_date_str = request.form.get('end_datetime_date')
+            end_time_str = request.form.get('end_datetime_time')
+            
+            if not all([start_date_str, start_time_str, end_date_str, end_time_str]):
+                flash("All date and time fields are required for specific hours constraints.", "danger")
+                return redirect(target_redirect)
+                
+            start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            start_time_obj = datetime.strptime(start_time_str, '%H:%M').time()
+            end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            end_time_obj = datetime.strptime(end_time_str, '%H:%M').time()
+            
+            cs_dt = datetime.combine(start_date_obj, start_time_obj)
+            ce_dt = datetime.combine(end_date_obj, end_time_obj)
+            
+            if ce_dt <= cs_dt:
+                flash("End date/time must be after start date/time.", "danger")
+                return redirect(target_redirect)
+                
+            constraint_type_db = "UNAVAILABLE_TIME_RANGE"
+            
+        else:
+            flash("Invalid constraint type.", "danger")
+            return redirect(target_redirect)
+        
+        # Create the constraint
+        constraint = Constraint(
+            worker_id=worker.id, 
+            constraint_type=constraint_type_db, 
+            start_datetime=cs_dt, 
+            end_datetime=ce_dt,
+            description=description
+        )
+        
+        db.session.add(constraint)
+        db.session.commit()
+        
+        # Create success message
+        duration_info = constraint.get_duration_str()
+        constraint_desc = constraint.get_constraint_description()
+        flash(f'Constraint added for {worker.name}: {constraint_desc} ({duration_info})', 'success')
+        
+    except ValueError as ve:
+        flash(f"Invalid date/time format: {ve}", "danger")
     except Exception as e:
-        db.session.rollback(); flash(f'Error adding constraint: {e}', 'danger')
+        db.session.rollback()
+        flash(f'Error adding constraint: {e}', 'danger')
         current_app.logger.error(f"Error in add_constraint for worker {worker_id}: {e}\n{request.form}")
+    
     return redirect(target_redirect)
+
+# Add this new route for deleting constraints:
+@main_bp.route('/constraint/<int:constraint_id>/delete', methods=['POST'])
+def delete_constraint(constraint_id):
+    constraint = Constraint.query.get_or_404(constraint_id)
+    worker_name = constraint.worker.name
+    constraint_desc = constraint.get_constraint_description()
+    
+    db.session.delete(constraint)
+    db.session.commit()
+    
+    flash(f'Constraint deleted for {worker_name}: {constraint_desc}', 'info')
+    return redirect(url_for('main.manage_workers'))
+
+# @main_bp.route('/worker/<int:worker_id>/add_constraint', methods=['POST'])
+# def add_constraint(worker_id):
+#     worker = Worker.query.get_or_404(worker_id)
+#     target_redirect = request.form.get('redirect_to', url_for('main.manage_workers'))
+#     try:
+#         start_date_str = request.form.get('constraint_start_date'); end_date_str = request.form.get('constraint_end_date')
+#         if not start_date_str or not end_date_str:
+#             flash("Both start and end dates for unavailability are required.", "danger"); return redirect(target_redirect)
+#         start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+#         end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+#         if end_date_obj < start_date_obj:
+#             flash("End date cannot be before start date.", "danger"); return redirect(target_redirect)
+#         cs_dt = datetime.combine(start_date_obj, time.min); ce_dt = datetime.combine(end_date_obj, time.max)
+#         constraint = Constraint(worker_id=worker.id, constraint_type="UNAVAILABLE_DAY_RANGE", start_datetime=cs_dt, end_datetime=ce_dt)
+#         db.session.add(constraint); db.session.commit()
+#         flash(f'Unavailability added for {worker.name}.', 'success')
+#     except ValueError: flash("Invalid date format for unavailability.", "danger")
+#     except Exception as e:
+#         db.session.rollback(); flash(f'Error adding constraint: {e}', 'danger')
+#         current_app.logger.error(f"Error in add_constraint for worker {worker_id}: {e}\n{request.form}")
+#     return redirect(target_redirect)
 
 
 # @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])

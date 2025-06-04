@@ -135,14 +135,74 @@ class ShiftDefinition(db.Model): # Represents a single coverage slot to be fille
         return " ".join(res) if res else "0m"
     def __repr__(self): return f'<ShiftDefinition ID:{self.id} {self.name} {self.slot_start_datetime}-{self.slot_end_datetime}>'
 
+# class Constraint(db.Model):
+#     __tablename__ = 'constraint'
+#     id = db.Column(db.Integer, primary_key=True)
+#     worker_id = db.Column(db.Integer, db.ForeignKey('worker.id', ondelete="CASCADE"), nullable=False)
+#     constraint_type = db.Column(db.String(50), nullable=False)
+#     start_datetime = db.Column(db.DateTime, nullable=False)
+#     end_datetime = db.Column(db.DateTime, nullable=False)
+#     def __repr__(self): return f'<Constraint {self.worker.name} - {self.constraint_type} from {self.start_datetime} to {self.end_datetime}>'
+
+# Update your Constraint class in models.py
+# Find the Constraint class and update it:
+
 class Constraint(db.Model):
     __tablename__ = 'constraint'
     id = db.Column(db.Integer, primary_key=True)
     worker_id = db.Column(db.Integer, db.ForeignKey('worker.id', ondelete="CASCADE"), nullable=False)
-    constraint_type = db.Column(db.String(50), nullable=False)
+    constraint_type = db.Column(db.String(50), nullable=False)  # e.g., "UNAVAILABLE_TIME_RANGE", "UNAVAILABLE_DAY_RANGE"
     start_datetime = db.Column(db.DateTime, nullable=False)
     end_datetime = db.Column(db.DateTime, nullable=False)
-    def __repr__(self): return f'<Constraint {self.worker.name} - {self.constraint_type} from {self.start_datetime} to {self.end_datetime}>'
+    
+    # NEW FIELDS for more detailed constraints
+    description = db.Column(db.String(200), nullable=True)  # e.g., "Doctor appointment", "Vacation"
+    
+    def get_constraint_description(self):
+        """Get a human-readable description of the constraint"""
+        if self.description:
+            return self.description
+        
+        # Auto-generate description based on times
+        start_str = self.start_datetime.strftime('%Y-%m-%d %H:%M')
+        end_str = self.end_datetime.strftime('%Y-%m-%d %H:%M')
+        
+        # Check if it's a full day constraint
+        if (self.start_datetime.time() == time.min and 
+            self.end_datetime.time() == time.max):
+            return f"Full day unavailable: {self.start_datetime.strftime('%Y-%m-%d')} - {self.end_datetime.strftime('%Y-%m-%d')}"
+        
+        # Check if it's same day, different hours
+        if self.start_datetime.date() == self.end_datetime.date():
+            return f"Unavailable: {self.start_datetime.strftime('%Y-%m-%d %H:%M')} - {self.end_datetime.strftime('%H:%M')}"
+        
+        # Multi-day with specific times
+        return f"Unavailable: {start_str} - {end_str}"
+    
+    def is_full_day_constraint(self):
+        """Check if this constraint covers full days"""
+        return (self.start_datetime.time() == time.min and 
+                self.end_datetime.time() == time.max)
+    
+    def get_duration_str(self):
+        """Get duration as a readable string"""
+        duration = self.end_datetime - self.start_datetime
+        days = duration.days
+        hours, remainder = divmod(duration.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        
+        parts = []
+        if days > 0:
+            parts.append(f"{days} day{'s' if days != 1 else ''}")
+        if hours > 0:
+            parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+        if minutes > 0:
+            parts.append(f"{minutes} min")
+        
+        return ", ".join(parts) if parts else "0 min"
+    
+    def __repr__(self): 
+        return f'<Constraint {self.worker.name} - {self.get_constraint_description()}>'
 
 class ScheduledShift(db.Model):
     __tablename__ = 'scheduled_shift'
