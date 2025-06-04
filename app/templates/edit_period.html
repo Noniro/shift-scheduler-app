@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Edit Scheduling Period - {{ period.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-warning text-dark">
+                <h4 class="mb-0">Edit Scheduling Period</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.edit_period', period_id=period.id) }}" class="needs-validation" novalidate>
+                    <div class="form-group">
+                        <label for="period_name">Period Name:</label>
+                        <input type="text" class="form-control" id="period_name" name="period_name" 
+                               value="{{ period.name }}" required>
+                        <div class="invalid-feedback">Period name is required.</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduling_period_range_input">Select Period Start and End Dates:</label>
+                        <input type="text" class="form-control" id="scheduling_period_range_input" 
+                               name="scheduling_period_range_str" required placeholder="Click to select date range"
+                               value="{{ period.period_start_datetime.strftime('%Y-%m-%d') }} - {{ period.period_end_datetime.strftime('%Y-%m-%d') }}">
+                        <div class="invalid-feedback">Please select a date range.</div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label for="period_start_time">Start Time (on first day):</label>
+                            <input type="time" class="form-control" id="period_start_time" name="period_start_time" 
+                                   value="{{ period.period_start_datetime.strftime('%H:%M') }}" required>
+                            <div class="invalid-feedback">Required.</div>
+                        </div>
+                        <div class="form-group col-md-6">
+                            <label for="period_end_time">End Time (on last day):</label>
+                            <input type="time" class="form-control" id="period_end_time" name="period_end_time" 
+                                   value="{{ period.period_end_datetime.strftime('%H:%M') }}" required>
+                            <div class="invalid-feedback">Required.</div>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="period_start_date_hidden" name="period_start_date_hidden" 
+                           value="{{ period.period_start_datetime.strftime('%Y-%m-%d') }}">
+                    <input type="hidden" id="period_end_date_hidden" name="period_end_date_hidden" 
+                           value="{{ period.period_end_datetime.strftime('%Y-%m-%d') }}">
+                    
+                    <div class="alert alert-warning">
+                        <strong>Warning:</strong> Changing the period dates/times may affect existing job roles and shift assignments.
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-warning btn-lg mr-3">Update Period</button>
+                        <a href="{{ url_for('main.manage_periods') }}" class="btn btn-secondary btn-lg">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const startDateHidden = document.getElementById('period_start_date_hidden');
+    const endDateHidden = document.getElementById('period_end_date_hidden');
+    const rangeDisplayInput = document.getElementById('scheduling_period_range_input');
+
+    const picker = new Litepicker({
+        element: rangeDisplayInput, 
+        singleMode: false, 
+        numberOfMonths: 1, 
+        format: 'YYYY-MM-DD',
+        setup: (pInstance) => {
+            pInstance.on('selected', (d1, d2) => {
+                if (d1 && d2) {
+                    startDateHidden.value = d1.format('YYYY-MM-DD');
+                    endDateHidden.value = d2.format('YYYY-MM-DD');
+                    rangeDisplayInput.value = `${d1.format('YYYY-MM-DD')} - ${d2.format('YYYY-MM-DD')}`;
+                } else { 
+                    startDateHidden.value = ''; 
+                    endDateHidden.value = ''; 
+                }
+            });
+        }
+    });
+    
+    // Bootstrap validation
+    (function() {'use strict';
+        window.addEventListener('load', function() {
+            var forms = document.getElementsByClassName('needs-validation');
+            Array.prototype.filter.call(forms, function(f) {
+                f.addEventListener('submit', function(e) {
+                    if(f.checkValidity() === false) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                    f.classList.add('was-validated');
+                }, false);
+            });
+        }, false);
+    })();
+});
+</script>
+{% endblock %}

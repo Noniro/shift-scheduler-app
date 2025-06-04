@@ -57,6 +57,7 @@
                          <span class="btn btn-sm btn-success disabled mr-1">Active</span>
                         {% endif %}
                         <a href="{{ url_for('main.manage_job_roles_for_period', period_id=p.id) }}" class="btn btn-sm btn-info mr-1">Roles/Slots</a>
+                        <a href="{{ url_for('main.edit_period', period_id=p.id) }}" class="btn btn-sm btn-warning mr-1" title="Edit Period">Edit</a>
                         <form method="POST" action="{{ url_for('main.delete_period', period_id=p.id) }}">
                             <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('DELETE period \'{{ p.name }}\' and ALL its data (roles, slots, assignments)? This cannot be undone.');">Delete</button>
                         </form>

@@ -766,3 +766,67 @@ def export_schedule_excel(period_id):
     response.headers['Content-Disposition'] = f'attachment; filename=schedule_{period.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.xlsx'
     
     return response
+
+# For editing time periods, you can add a route like this:
+@main_bp.route('/period/<int:period_id>/edit', methods=['GET', 'POST'])
+def edit_period(period_id):
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    if request.method == 'POST':
+        try:
+            name = request.form.get('period_name')
+            start_date_str = request.form.get('period_start_date_hidden')
+            end_date_str = request.form.get('period_end_date_hidden')
+            start_time_str = request.form.get('period_start_time')
+            end_time_str = request.form.get('period_end_time')
+
+            if not name or not name.strip():
+                flash("Period name is required.", "danger")
+                return redirect(url_for('main.edit_period', period_id=period_id))
+            name = name.strip()
+
+            if not all([start_date_str, end_date_str, start_time_str, end_time_str]):
+                flash("All period date and time fields are required.", "danger")
+                return redirect(url_for('main.edit_period', period_id=period_id))
+
+            # Check if name is taken by another period (not this one)
+            existing_period = SchedulingPeriod.query.filter(
+                SchedulingPeriod.name.ilike(name),
+                SchedulingPeriod.id != period_id
+            ).first()
+            if existing_period:
+                flash(f"A scheduling period with the name '{name}' already exists.", "danger")
+                return redirect(url_for('main.edit_period', period_id=period_id))
+
+            start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            start_time_obj = datetime.strptime(start_time_str, '%H:%M').time()
+            end_time_obj = datetime.strptime(end_time_str, '%H:%M').time()
+
+            if end_date_obj < start_date_obj or \
+               (end_date_obj == start_date_obj and end_time_obj <= start_time_obj):
+                flash("Period end must be after period start.", "danger")
+                return redirect(url_for('main.edit_period', period_id=period_id))
+
+            period_start_dt = datetime.combine(start_date_obj, start_time_obj)
+            period_end_dt = datetime.combine(end_date_obj, end_time_obj)
+            
+            # Update the period
+            period.name = name
+            period.period_start_datetime = period_start_dt
+            period.period_end_datetime = period_end_dt
+
+            db.session.commit()
+            flash(f"Scheduling Period '{name}' updated successfully.", "success")
+            return redirect(url_for('main.manage_periods'))
+            
+        except ValueError as ve:
+            flash(f"Invalid date or time format: {ve}", "danger")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error updating period: {e}", "danger")
+            current_app.logger.error(f"Error updating period {period_id}: {e}\n{request.form}")
+        return redirect(url_for('main.edit_period', period_id=period_id))
+
+    # GET request - show edit form
+    return render_template('edit_period.html', period=period)
