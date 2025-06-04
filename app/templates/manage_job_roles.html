@@ -13,7 +13,7 @@
     </div>
 </div>
 
-{# ---- NEW: Display for Detailed Assignment Warnings ---- #}
+{# ---- Display for Detailed Assignment Warnings ---- #}
 {% if assignment_details %}
 <div class="alert alert-secondary mt-3">
     <p>
@@ -30,12 +30,9 @@
     </div>
 </div>
 {% endif %}
-{# ---- END OF NEW DISPLAY ---- #}
-
 
 <div class="row">
     <div class="col-md-5">
-        {# ... (Card for Add New Job Role - REMAINS THE SAME) ... #}
         <div class="card mb-4 shadow-sm">
             <div class="card-header bg-info text-white">Add New Job Role</div>
             <div class="card-body">
@@ -50,30 +47,75 @@
                         <input type="number" class="form-control" id="number_needed" name="number_needed" value="1" min="1" required>
                         <div class="invalid-feedback">At least 1 worker needed.</div>
                     </div>
+                    
                     <p><strong>Standard Shift Duration for this Role:</strong> (Min 20 minutes total)</p>
                     <div class="form-row">
                         <div class="form-group col-md-4"><label for="duration_days">Days:</label><input type="number" class="form-control" id="duration_days" name="duration_days" value="0" min="0" max="30" required></div>
                         <div class="form-group col-md-4"><label for="duration_hours">Hours:</label><input type="number" class="form-control" id="duration_hours" name="duration_hours" value="8" min="0" max="23" required></div>
                         <div class="form-group col-md-4"><label for="duration_minutes">Minutes:</label><input type="number" class="form-control" id="duration_minutes" name="duration_minutes" value="0" min="0" max="59" step="5" required></div>
                     </div>
+                    
+                    {# NEW SECTION: Working Hours Constraints #}
+                    <hr>
+                    <div class="form-group">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="has_time_restrictions" name="has_time_restrictions" onchange="toggleTimeRestrictions()">
+                            <label class="form-check-label" for="has_time_restrictions">
+                                <strong>Restrict Working Hours</strong> (e.g., night shifts only)
+                            </label>
+                        </div>
+                        <small class="text-muted">Check this if this role should only work during specific hours of the day</small>
+                    </div>
+                    
+                    <div id="time_restrictions_section" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label for="work_start_time">Work Start Time:</label>
+                                <input type="time" class="form-control" id="work_start_time" name="work_start_time" value="22:00">
+                                <small class="text-muted">When this role starts working</small>
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label for="work_end_time">Work End Time:</label>
+                                <input type="time" class="form-control" id="work_end_time" name="work_end_time" value="06:00">
+                                <small class="text-muted">When this role stops working</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_overnight_shift" name="is_overnight_shift">
+                                <label class="form-check-label" for="is_overnight_shift">
+                                    This is an overnight shift (crosses midnight)
+                                </label>
+                                <small class="form-text text-muted">Check if work end time is the next day (e.g., 22:00 - 06:00)</small>
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <small><strong>Example:</strong> For night security (22:00 - 06:00), set start time to 22:00, end time to 06:00, and check "overnight shift"</small>
+                        </div>
+                    </div>
+                    
                     <button type="submit" class="btn btn-primary btn-block">Add Job Role</button>
                 </form>
             </div>
         </div>
 
         <h4>Existing Job Roles <span class="badge badge-secondary">{{ job_roles|length }}</span></h4>
-        {# ... (Existing Job Roles list - REMAINS THE SAME) ... #}
         {% if job_roles %}
             <ul class="list-group mb-3">
             {% for role in job_roles %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
                     <div>
                         <strong>{{ role.name }}</strong> (Need: {{ role.number_needed }})<br>
-                        <small>Shift Duration:
+                        <small><strong>Shift Duration:</strong>
                             {% if role.shift_duration_days > 0 %}{{ role.shift_duration_days }}d {% endif %}
                             {% if role.shift_duration_hours > 0 %}{{ role.shift_duration_hours }}h {% endif %}
                             {% if role.shift_duration_minutes > 0 %}{{ role.shift_duration_minutes }}m{% endif %}
                             {% if role.shift_duration_days == 0 and role.shift_duration_hours == 0 and role.shift_duration_minutes == 0 %}0m (Warning: No duration!){% endif %}
+                        </small><br>
+                        <small><strong>Working Hours:</strong> 
+                            <span class="badge badge-pill {% if role.has_time_restrictions() %}badge-warning{% else %}badge-success{% endif %}">
+                                {{ role.get_working_hours_str() }}
+                            </span>
                         </small>
                     </div>
                     <form method="POST" action="{{ url_for('main.delete_job_role', period_id=period.id, role_id=role.id) }}" style="display: inline;">
@@ -89,7 +131,6 @@
 
     <div class="col-md-7">
         <h4>Generate Coverage Slots & Assign Workers</h4>
-        {# ... (Button section for Generate Slots & Assign - REMAINS THE SAME as last version where can_assign was added) ... #}
         {% if job_roles %}
             {% if can_assign %}
                 <form method="POST" action="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}">
@@ -107,7 +148,6 @@
             <p>Add job roles first to enable generation of coverage slots and assignments.</p>
         {% endif %}
 
-        {# ... (Display for Generated Coverage Slots - REMAINS THE SAME) ... #}
         {% if generated_slots %}
             <h5 class="mt-3">Generated Coverage Slots <span class="badge badge-info">{{ generated_slots|length }}</span></h5>
             <div class="list-group" style="max-height: 500px; overflow-y: auto;">
@@ -139,6 +179,22 @@
 
 {% block scripts %}{{ super() }}
 <script>
+function toggleTimeRestrictions() {
+    const checkbox = document.getElementById('has_time_restrictions');
+    const section = document.getElementById('time_restrictions_section');
+    
+    if (checkbox.checked) {
+        section.style.display = 'block';
+        document.getElementById('work_start_time').required = true;
+        document.getElementById('work_end_time').required = true;
+    } else {
+        section.style.display = 'none';
+        document.getElementById('work_start_time').required = false;
+        document.getElementById('work_end_time').required = false;
+    }
+}
+
+// Bootstrap validation
 (function() {'use strict';window.addEventListener('load', function() {
 var forms=document.getElementsByClassName('needs-validation');
 Array.prototype.filter.call(forms,function(f){f.addEventListener('submit',function(e){
