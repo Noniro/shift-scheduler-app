@@ -78,6 +78,7 @@
                                         <th>End Time</th>
                                         <th>Duration</th>
                                         <th>Assigned Worker</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -89,12 +90,94 @@
                                         <td>{{ assignment.defined_slot.duration_hours_minutes_str }}</td>
                                         <td>
                                             {% if assignment.worker_assigned %}
-                                                {{ assignment.worker_assigned.name }}
+                                                <span class="badge badge-success">{{ assignment.worker_assigned.name }}</span>
                                             {% else %}
                                                 <span class="text-danger font-weight-bold">UNASSIGNED</span>
                                             {% endif %}
                                         </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" data-toggle="modal" data-target="#editAssignmentModal-{{ assignment.id }}" title="Edit Assignment">
+                                                ✏️ Edit
+                                            </button>
+                                        </td>
                                     </tr>
+
+                                    <!-- Edit Assignment Modal -->
+                                    <div class="modal fade" id="editAssignmentModal-{{ assignment.id }}" tabindex="-1" role="dialog">
+                                        <div class="modal-dialog" role="document">
+                                            <div class="modal-content">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title">Edit Assignment: {{ assignment.defined_slot.name }}</h5>
+                                                    <button type="button" class="close" data-dismiss="modal">×</button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <div class="mb-3">
+                                                        <strong>Shift Details:</strong><br>
+                                                        <small>
+                                                            {{ assignment.defined_slot.slot_start_datetime.strftime('%A, %B %d, %Y') }}<br>
+                                                            {{ assignment.defined_slot.slot_start_datetime.strftime('%H:%M') }} - {{ assignment.defined_slot.slot_end_datetime.strftime('%H:%M') }} 
+                                                            ({{ assignment.defined_slot.duration_hours_minutes_str }})
+                                                        </small>
+                                                    </div>
+                                                    
+                                                    <form method="POST" action="{{ url_for('main.edit_assignment_worker', assignment_id=assignment.id) }}">
+                                                        <div class="form-group">
+                                                            <label for="worker_select_{{ assignment.id }}">Assign Worker:</label>
+                                                            <select class="form-control" id="worker_select_{{ assignment.id }}" name="worker_id">
+                                                                <option value="unassign">-- Unassign --</option>
+                                                                {% for worker in workers %}
+                                                                    {% set is_qualified = assignment.defined_slot.job_role in worker.qualified_roles %}
+                                                                    <option value="{{ worker.id }}" 
+                                                                            {% if assignment.worker_assigned and assignment.worker_assigned.id == worker.id %}selected{% endif %}
+                                                                            {% if not is_qualified %}class="text-muted"{% endif %}>
+                                                                        {{ worker.name }}
+                                                                        {% if not is_qualified %} (Not Qualified){% endif %}
+                                                                    </option>
+                                                                {% endfor %}
+                                                            </select>
+                                                            <small class="text-muted">Workers not qualified for this role are shown in gray</small>
+                                                        </div>
+                                                        
+                                                        {% if assignment.worker_assigned %}
+                                                        <div class="alert alert-info">
+                                                            <small><strong>Currently assigned:</strong> {{ assignment.worker_assigned.name }}</small>
+                                                        </div>
+                                                        {% endif %}
+                                                        
+                                                        <div class="form-group">
+                                                            <button type="submit" class="btn btn-primary">Update Assignment</button>
+                                                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                                                        </div>
+                                                    </form>
+                                                    
+                                                    <hr>
+                                                    <h6>Quick Actions:</h6>
+                                                    <div class="btn-group-vertical btn-group-sm w-100">
+                                                        {% if assignment.worker_assigned %}
+                                                        <form method="POST" action="{{ url_for('main.edit_assignment_worker', assignment_id=assignment.id) }}" style="display: inline;">
+                                                            <input type="hidden" name="worker_id" value="unassign">
+                                                            <button type="submit" class="btn btn-outline-warning btn-block" onclick="return confirm('Unassign {{ assignment.worker_assigned.name }} from this shift?')">
+                                                                🚫 Unassign Current Worker
+                                                            </button>
+                                                        </form>
+                                                        {% endif %}
+                                                        
+                                                        {% for worker in workers %}
+                                                            {% if worker.id != (assignment.worker_assigned.id if assignment.worker_assigned else 0) %}
+                                                                {% set is_qualified = assignment.defined_slot.job_role in worker.qualified_roles %}
+                                                                <form method="POST" action="{{ url_for('main.edit_assignment_worker', assignment_id=assignment.id) }}" style="display: inline;">
+                                                                    <input type="hidden" name="worker_id" value="{{ worker.id }}">
+                                                                    <button type="submit" class="btn btn-outline-{{ 'success' if is_qualified else 'secondary' }} btn-block btn-sm">
+                                                                        {{ worker.name }}{% if not is_qualified %} ⚠️{% endif %}
+                                                                    </button>
+                                                                </form>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 {% endfor %}
                                 </tbody>
                             </table>
