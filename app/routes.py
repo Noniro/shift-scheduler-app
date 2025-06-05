@@ -1320,6 +1320,10 @@ def export_schedule_excel(period_id):
     
     return response
 
+
+# Import the function here to avoid import issues
+from .algorithm import is_worker_qualified_for_slot
+
 # For editing time periods, you can add a route like this:
 @main_bp.route('/period/<int:period_id>/edit', methods=['GET', 'POST'])
 def edit_period(period_id):
@@ -1383,3 +1387,116 @@ def edit_period(period_id):
 
     # GET request - show edit form
     return render_template('edit_period.html', period=period)
+
+
+    # Option to edit the "Home\Dashboard" list manually if needed
+    # Add these routes to your routes.py file for manual assignment editing
+
+@main_bp.route('/assignment/<int:assignment_id>/edit_worker', methods=['POST'])
+def edit_assignment_worker(assignment_id):
+    """Manually assign or reassign a worker to a specific shift"""
+    assignment = ScheduledShift.query.get_or_404(assignment_id)
+    new_worker_id = request.form.get('worker_id')
+    
+    # Get the shift definition to check role requirements
+    shift_def = assignment.defined_slot
+    if not shift_def:
+        flash("Error: Shift definition not found.", "danger")
+        return redirect(url_for('main.index'))
+    
+    try:
+        if new_worker_id == 'unassign':
+            # Unassign the worker
+            old_worker_name = assignment.worker_assigned.name if assignment.worker_assigned else "unassigned"
+            assignment.worker_id = None
+            db.session.commit()
+            flash(f"Unassigned {old_worker_name} from {shift_def.name} on {shift_def.slot_start_datetime.strftime('%Y-%m-%d %H:%M')}", "info")
+            
+        elif new_worker_id and new_worker_id.isdigit():
+            # Assign to a specific worker
+            new_worker = Worker.query.get(int(new_worker_id))
+            if not new_worker:
+                flash("Worker not found.", "danger")
+                return redirect(url_for('main.index'))
+            
+            # Check if worker is qualified for this role
+            if not is_worker_qualified_for_slot(new_worker, shift_def):
+                flash(f"Warning: {new_worker.name} is not qualified for role {shift_def.job_role.name}, but assignment was made anyway.", "warning")
+            
+            # Check for conflicts with other assignments
+            active_period = get_active_period()
+            if active_period:
+                # Get all other assignments for this worker in the same period
+                conflicting_assignments = ScheduledShift.query.options(
+                    joinedload(ScheduledShift.defined_slot)
+                ).join(ShiftDefinition).filter(
+                    ShiftDefinition.scheduling_period_id == active_period.id,
+                    ScheduledShift.worker_id == new_worker.id,
+                    ScheduledShift.id != assignment_id
+                ).all()
+                
+                # Check for time overlaps
+                for other_assignment in conflicting_assignments:
+                    other_slot = other_assignment.defined_slot
+                    if (max(shift_def.slot_start_datetime, other_slot.slot_start_datetime) < 
+                        min(shift_def.slot_end_datetime, other_slot.slot_end_datetime)):
+                        flash(f"Warning: Time conflict detected with {other_slot.name} on {other_slot.slot_start_datetime.strftime('%Y-%m-%d %H:%M')}, but assignment was made anyway.", "warning")
+                        break
+            
+            old_worker_name = assignment.worker_assigned.name if assignment.worker_assigned else "unassigned"
+            assignment.worker_id = new_worker.id
+            db.session.commit()
+            
+            if old_worker_name != "unassigned":
+                flash(f"Reassigned {shift_def.name} from {old_worker_name} to {new_worker.name} on {shift_def.slot_start_datetime.strftime('%Y-%m-%d %H:%M')}", "success")
+            else:
+                flash(f"Assigned {new_worker.name} to {shift_def.name} on {shift_def.slot_start_datetime.strftime('%Y-%m-%d %H:%M')}", "success")
+        else:
+            flash("Invalid worker selection.", "danger")
+            
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error updating assignment: {e}", "danger")
+        current_app.logger.error(f"Error in edit_assignment_worker for assignment {assignment_id}: {e}")
+    
+    return redirect(url_for('main.index'))
+
+@main_bp.route('/assignment/<int:assignment_id>/swap', methods=['POST'])
+def swap_assignments(assignment_id):
+    """Swap workers between two assignments"""
+    assignment1 = ScheduledShift.query.get_or_404(assignment_id)
+    assignment2_id = request.form.get('swap_with_assignment_id')
+    
+    if not assignment2_id or not assignment2_id.isdigit():
+        flash("Invalid assignment to swap with.", "danger")
+        return redirect(url_for('main.index'))
+    
+    assignment2 = ScheduledShift.query.get(int(assignment2_id))
+    if not assignment2:
+        flash("Assignment to swap with not found.", "danger")
+        return redirect(url_for('main.index'))
+    
+    try:
+        # Get worker info before swap
+        worker1 = assignment1.worker_assigned
+        worker2 = assignment2.worker_assigned
+        shift1 = assignment1.defined_slot
+        shift2 = assignment2.defined_slot
+        
+        # Perform the swap
+        assignment1.worker_id = worker2.id if worker2 else None
+        assignment2.worker_id = worker1.id if worker1 else None
+        
+        db.session.commit()
+        
+        worker1_name = worker1.name if worker1 else "unassigned"
+        worker2_name = worker2.name if worker2 else "unassigned"
+        
+        flash(f"Swapped assignments: {worker1_name} ↔ {worker2_name} between {shift1.name} and {shift2.name}", "success")
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error swapping assignments: {e}", "danger")
+        current_app.logger.error(f"Error in swap_assignments: {e}")
+    
+    return redirect(url_for('main.index'))
