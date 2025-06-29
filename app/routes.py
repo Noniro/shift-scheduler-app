@@ -1500,3 +1500,8 @@ def swap_assignments(assignment_id):
         current_app.logger.error(f"Error in swap_assignments: {e}")
     
     return redirect(url_for('main.index'))
+
+
+    # Adding statistics page to know how many shifts were assigned, unassigned, how did shift at night, etc.
+    # Also we want to see from each role how each worker performed, how many shifts were assigned to each worker, etc.
+    
