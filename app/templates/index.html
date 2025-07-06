@@ -86,7 +86,7 @@
                                     <tr>
                                         <td>{{ assignment.defined_slot.name }}</td>
                                         <td>{{ assignment.defined_slot.slot_start_datetime.strftime('%a, %b %d, %Y %H:%M') }}</td>
-                                        <td>{{ assignment.defined_slot.slot_end_datetime.strftime('%a, %b %d, %H:%M') }}</td>
+                                        <td>{{ assignment.defined_slot.slot_end_datetime.strftime('%a, %b %d, %Y %H:%M') }}</td>
                                         <td>{{ assignment.defined_slot.duration_hours_minutes_str }}</td>
                                         <td>
                                             {% if assignment.worker_assigned %}
@@ -182,6 +182,26 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <!-- Statistics Chart Section -->
+                        {% if worker_hours %}
+                        <div class="row mt-5">
+                            <div class="col-md-12">
+                                <div class="card shadow-sm">
+                                    <div class="card-header">
+                                        Worker Hours Summary
+                                    </div>
+                                    <div class="card-body">
+                                        <div style="height: 400px; position: relative;">
+                                            <canvas id="workerHoursChart"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <!-- END: Statistics Chart Section -->
+
                     {% elif has_defined_shift_slots %}
                         <p class="text-center text-muted mt-4">
                             Coverage slots have been generated for this period, but no worker assignments have been made yet.
@@ -200,10 +220,108 @@
     {% endif %} {# end if not current_user_name #}
 {% endblock %}
 
-{% block scripts %}{{ super() }}<script>
-(function() {'use strict';window.addEventListener('load', function() {
-var forms=document.getElementsByClassName('needs-validation');
-Array.prototype.filter.call(forms,function(form){form.addEventListener('submit',function(event){
-if(form.checkValidity()===false){event.preventDefault();event.stopPropagation();}
-form.classList.add('was-validated');},false);});},false);})();
-</script>{% endblock %}
+{% block scripts %}
+    {{ super() }}
+
+    <!-- 1. Include the Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- 2. Your custom scripts -->
+    <script>
+        // This is your ORIGINAL Bootstrap validation script. It's good to keep it.
+        (function() {
+            'use strict';
+            window.addEventListener('load', function() {
+                var forms = document.getElementsByClassName('needs-validation');
+                Array.prototype.filter.call(forms, function(form) {
+                    form.addEventListener('submit', function(event) {
+                        if (form.checkValidity() === false) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
+                        form.classList.add('was-validated');
+                    }, false);
+                });
+            }, false);
+        })();
+
+        // This is the NEW chart rendering logic.
+        // We use DOMContentLoaded to make sure the page HTML is ready before we run our code.
+        document.addEventListener('DOMContentLoaded', function() {
+            // The Jinja template will render the JSON object here.
+            // Your code editor might show an error on the next line, but it's correct for Flask.
+            const workerHoursData = JSON.parse('{{ worker_hours|tojson|safe if worker_hours else "{}" }}');
+            const chartCanvas = document.getElementById('workerHoursChart');
+
+            // Check if the canvas element and data exist before creating the chart
+            if (chartCanvas && workerHoursData && Object.keys(workerHoursData).length > 0) {
+                const labels = Object.keys(workerHoursData);
+                const data = Object.values(workerHoursData);
+
+                // Generate dynamic, distinct colors for the bar chart
+                const backgroundColors = labels.map((_, i) => `hsla(${(i * 360 / labels.length) * 0.7}, 60%, 55%, 0.7)`);
+                const borderColors = labels.map((_, i) => `hsla(${(i * 360 / labels.length) * 0.7}, 60%, 55%, 1)`);
+
+                const ctx = chartCanvas.getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Total Hours Assigned',
+                            data: data,
+                            backgroundColor: backgroundColors,
+                            borderColor: borderColors,
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false, // Important for fitting into a container div
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Total Hours'
+                                }
+                            },
+                            x: {
+                               title: {
+                                    display: true,
+                                    text: 'Worker'
+                               }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: 'Total Scheduled Hours per Worker',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.y !== null) {
+                                            label += context.parsed.y.toFixed(2) + ' hours';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+{% endblock %}

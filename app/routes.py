@@ -151,6 +151,7 @@ def index():
     
     scheduled_assignments = []
     has_defined_shift_slots = False # Slots are ShiftDefinition instances
+    worker_hours = {} # NEW: Initialize worker hours dictionary
 
     if active_period:
         has_defined_shift_slots = ShiftDefinition.query.filter_by(scheduling_period_id=active_period.id).first() is not None
@@ -162,12 +163,23 @@ def index():
                 filter(ShiftDefinition.scheduling_period_id == active_period.id).\
                 order_by(ShiftDefinition.slot_start_datetime, ShiftDefinition.job_role_id, ShiftDefinition.instance_number).all()
 
+            # NEW: Calculate worker hours from assignments
+            if scheduled_assignments:
+                for assignment in scheduled_assignments:
+                    if assignment.worker_assigned:
+                        worker = assignment.worker_assigned
+                        # Calculate duration in hours
+                        duration_hours = assignment.defined_slot.duration_timedelta.total_seconds() / 3600.0
+                        worker_hours[worker.name] = worker_hours.get(worker.name, 0) + duration_hours
+
+
     return render_template('index.html',
                            current_user_name=current_user_name,
                            active_period=active_period,
                            workers=workers,
                            scheduled_assignments=scheduled_assignments,
-                           has_defined_shift_slots=has_defined_shift_slots)
+                           has_defined_shift_slots=has_defined_shift_slots,
+                           worker_hours=worker_hours) # NEW: Pass data to template
 
 @main_bp.route('/set_user_name', methods=['POST'])
 def set_user_name():
@@ -1504,4 +1516,3 @@ def swap_assignments(assignment_id):
 
     # Adding statistics page to know how many shifts were assigned, unassigned, how did shift at night, etc.
     # Also we want to see from each role how each worker performed, how many shifts were assigned to each worker, etc.
-    
