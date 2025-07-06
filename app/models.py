@@ -54,6 +54,9 @@ class JobRole(db.Model):
     shift_duration_hours = db.Column(db.Integer, default=0, nullable=False)
     shift_duration_minutes = db.Column(db.Integer, default=0, nullable=False)
     
+    # NEW FIELD FOR DIFFICULTY MULTIPLIER
+    difficulty_multiplier = db.Column(db.Float, nullable=False, default=1.0, server_default='1.0')
+
     # NEW FIELDS FOR TIME CONSTRAINTS
     work_start_time = db.Column(db.Time, nullable=True)  # e.g., 22:00 for night shift
     work_end_time = db.Column(db.Time, nullable=True)    # e.g., 04:00 for night shift
@@ -64,6 +67,7 @@ class JobRole(db.Model):
     # defined_slots relationship via backref from ShiftDefinition
     # qualified_workers relationship via backref from Worker through association table
 
+    
     def get_duration_timedelta(self):
         return timedelta(
             days=self.shift_duration_days, 

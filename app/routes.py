@@ -317,7 +317,10 @@ def manage_job_roles_for_period(period_id):
             hours_str = request.form.get('duration_hours', '0')
             minutes_str = request.form.get('duration_minutes', '0')
             
-            # NEW: Time constraint fields
+            # GET the new multiplier value
+            difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1.0')
+
+            # Time constraint fields
             has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
             work_start_time_str = request.form.get('work_start_time')
             work_end_time_str = request.form.get('work_end_time')
@@ -331,6 +334,9 @@ def manage_job_roles_for_period(period_id):
                 days = int(days_str)
                 hours = int(hours_str) 
                 minutes = int(minutes_str)
+
+                # CONVERT multiplier to float
+                difficulty_multiplier = float(difficulty_multiplier_str)
                 
                 if number_needed < 1: 
                     flash("Number needed must be at least 1.", "danger")
@@ -372,7 +378,8 @@ def manage_job_roles_for_period(period_id):
                             number_needed=number_needed, 
                             shift_duration_days=days, 
                             shift_duration_hours=hours, 
-                            shift_duration_minutes=minutes, 
+                            shift_duration_minutes=minutes,
+                            difficulty_multiplier=difficulty_multiplier, # ADD to object creation
                             scheduling_period_id=period.id,
                             work_start_time=work_start_time,
                             work_end_time=work_end_time,
@@ -388,7 +395,7 @@ def manage_job_roles_for_period(period_id):
                         flash(f"Job Role '{role_name}' added to period '{period.name}'.{time_info}", "success")
                         
         except ValueError: 
-            flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
+            flash("Invalid number for 'Needed' , 'Duration' or 'Multiplier' fields.", "danger")
         except Exception as e: 
             db.session.rollback()
             flash(f"Error adding job role: {e}", "danger")
@@ -414,6 +421,7 @@ def manage_job_roles_for_period(period_id):
                            generated_slots=generated_slots,
                            has_generated_slots=has_generated_slots,
                            can_assign=can_assign,
+                           workers_exist=workers_exist,
                            assignment_details=assignment_details) # Pass to template
 
 
