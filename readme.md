@@ -43,3 +43,6 @@ The app's ridiculously over-engineered algorithm whirs to life, sifts through a 
     flask run
     ```
 5.  Go to `http://127.0.0.1:5000` and reclaim your sanity.
+
+## 🌐 The Future
+Currently, this bad boy runs locally on your machine. But soon, it shall be unleashed upon the World Wide Web, so you can manage schedules from your phone while pretending to listen in a meeting. Stay tuned.
