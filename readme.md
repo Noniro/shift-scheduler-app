@@ -18,7 +18,7 @@ The app's ridiculously over-engineered algorithm whirs to life, sifts through a 
 -   📅 **Constraint Management:** Workers can't work on their day off? The app actually listens.
 -   📤 **Export to Civilization:** Get your final schedule in CSV or Excel, because some people still live in 2003.
 
-## 🛠️ The Tech Stack (The Magic Ingredients)
+## 🛠️ The Tech Stack 
 
 -   **Backend:** **Python** with **Flask** – The sturdy, no-nonsense engine.
 -   **Database:** **SQLAlchemy** (with SQLite) – For remembering everything you told it.
