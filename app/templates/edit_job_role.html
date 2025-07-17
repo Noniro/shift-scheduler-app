@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Edit Job Role - {{ role.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-warning text-dark">
+                <h4 class="mb-0">Edit Job Role</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.edit_job_role', period_id=period.id, role_id=role.id) }}" class="needs-validation" novalidate>
+                    <div class="form-group">
+                        <label for="role_name">Role Name:</label>
+                        <input type="text" class="form-control" id="role_name" name="role_name" value="{{ role.name }}" required>
+                        <div class="invalid-feedback">Role name is required.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="number_needed">Number Needed Simultaneously:</label>
+                        <input type="number" class="form-control" id="number_needed" name="number_needed" value="{{ role.number_needed }}" min="1" required>
+                        <div class="invalid-feedback">At least 1 worker needed.</div>
+                    </div>
+
+                    <p><strong>Standard Shift Duration:</strong></p>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="duration_days">Days:</label>
+                            <input type="number" class="form-control" id="duration_days" name="duration_days" value="{{ role.shift_duration_days }}" min="0" max="30" required>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="duration_hours">Hours:</label>
+                            <input type="number" class="form-control" id="duration_hours" name="duration_hours" value="{{ role.shift_duration_hours }}" min="0" max="23" required>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="duration_minutes">Minutes:</label>
+                            <input type="number" class="form-control" id="duration_minutes" name="duration_minutes" value="{{ role.shift_duration_minutes }}" min="0" max="59" step="5" required>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <div class="form-group">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="has_time_restrictions" name="has_time_restrictions" onchange="toggleTimeRestrictions()" {% if role.has_time_restrictions() %}checked{% endif %}>
+                            <label class="form-check-label" for="has_time_restrictions">
+                                <strong>Restrict Working Hours</strong>
+                            </label>
+                        </div>
+                        <small class="text-muted">Check this if this role should only work during specific hours of the day</small>
+                    </div>
+
+                    <div id="time_restrictions_section" {% if role.has_time_restrictions() %}style="display: block;"{% else %}style="display: none;"{% endif %}>
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label for="work_start_time">Work Start Time:</label>
+                                <input type="time" class="form-control" id="work_start_time" name="work_start_time" value="{{ role.work_start_time.strftime('%H:%M') if role.work_start_time else '22:00' }}">
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label for="work_end_time">Work End Time:</label>
+                                <input type="time" class="form-control" id="work_end_time" name="work_end_time" value="{{ role.work_end_time.strftime('%H:%M') if role.work_end_time else '06:00' }}">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_overnight_shift" name="is_overnight_shift" {% if role.is_overnight_shift %}checked{% endif %}>
+                                <label class="form-check-label" for="is_overnight_shift">
+                                    This is an overnight shift (crosses midnight)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-warning btn-lg mr-3">Update Role</button>
+                        <a href="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" class="btn btn-secondary btn-lg">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}{{ super() }}
+<script>
+function toggleTimeRestrictions() {
+    const checkbox = document.getElementById('has_time_restrictions');
+    const section = document.getElementById('time_restrictions_section');
+    if (checkbox.checked) {
+        section.style.display = 'block';
+        document.getElementById('work_start_time').required = true;
+        document.getElementById('work_end_time').required = true;
+    } else {
+        section.style.display = 'none';
+        document.getElementById('work_start_time').required = false;
+        document.getElementById('work_end_time').required = false;
+    }
+}
+
+(function() {
+    'use strict';
+    window.addEventListener('load', function() {
+        var forms = document.getElementsByClassName('needs-validation');
+        Array.prototype.filter.call(forms, function(f) {
+            f.addEventListener('submit', function(e) {
+                if (f.checkValidity() === false) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                f.classList.add('was-validated');
+            }, false);
+        });
+    }, false);
+})();
+</script>
+{% endblock %}

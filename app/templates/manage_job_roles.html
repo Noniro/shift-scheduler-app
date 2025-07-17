@@ -127,6 +127,7 @@
                             </span>
                         </small>
                     </div>
+                        <a href="{{ url_for('main.edit_job_role', period_id=period.id, role_id=role.id) }}" class="btn btn-warning btn-sm mr-1">Edit</a>
                     <form method="POST" action="{{ url_for('main.delete_job_role', period_id=period.id, role_id=role.id) }}" style="display: inline;">
                         <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('DELETE role \'{{role.name}}\' and ALL its generated slots/assignments? This cannot be undone.');">Delete Role</button>
                     </form>
