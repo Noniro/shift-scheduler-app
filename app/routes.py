@@ -284,6 +284,98 @@ def manage_job_roles_for_period(period_id):
     # Update your job role creation logic in routes.py
     # Find the manage_job_roles_for_period POST section and replace it with this:
 
+    # if request.method == 'POST':
+    #     try:
+    #         role_name = request.form.get('role_name')
+    #         number_needed_str = request.form.get('number_needed', '1')
+    #         days_str = request.form.get('duration_days', '0')
+    #         hours_str = request.form.get('duration_hours', '0')
+    #         minutes_str = request.form.get('duration_minutes', '0')
+            
+    #         # GET the new multiplier value
+    #         difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1.0')
+
+    #         # Time constraint fields
+    #         has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
+    #         work_start_time_str = request.form.get('work_start_time')
+    #         work_end_time_str = request.form.get('work_end_time')
+    #         is_overnight_shift = request.form.get('is_overnight_shift') == 'on'
+            
+    #         if not role_name or not role_name.strip(): 
+    #             flash("Job role name is required.", "danger")
+    #         else:
+    #             role_name = role_name.strip()
+    #             number_needed = int(number_needed_str)
+    #             days = int(days_str)
+    #             hours = int(hours_str) 
+    #             minutes = int(minutes_str)
+
+    #             # CONVERT multiplier to float
+    #             difficulty_multiplier = float(difficulty_multiplier_str)
+                
+    #             if number_needed < 1: 
+    #                 flash("Number needed must be at least 1.", "danger")
+    #             else:
+    #                 total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
+    #                 if total_duration_minutes < 20: 
+    #                     flash("Minimum shift duration for a role is 20 minutes.", "danger")
+    #                 elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: 
+    #                     flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+    #                 elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): 
+    #                     flash(f"Job role '{role_name}' already exists for this period.", "warning")
+    #                 else:
+    #                     # Parse time constraints if provided
+    #                     work_start_time = None
+    #                     work_end_time = None
+                        
+    #                     if has_time_restrictions:
+    #                         if not work_start_time_str or not work_end_time_str:
+    #                             flash("Both start and end times are required when restricting working hours.", "danger")
+    #                             return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                            
+    #                         try:
+    #                             work_start_time = datetime.strptime(work_start_time_str, '%H:%M').time()
+    #                             work_end_time = datetime.strptime(work_end_time_str, '%H:%M').time()
+                                
+    #                             # Validate time logic
+    #                             if not is_overnight_shift and work_end_time <= work_start_time:
+    #                                 flash("End time must be after start time for same-day shifts.", "danger")
+    #                                 return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+    #                             elif is_overnight_shift and work_end_time >= work_start_time:
+    #                                 flash("For overnight shifts, end time should be earlier than start time (next day).", "warning")
+                                    
+    #                         except ValueError:
+    #                             flash("Invalid time format. Please use HH:MM format.", "danger")
+    #                             return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                        
+    #                     new_role = JobRole(
+    #                         name=role_name, 
+    #                         number_needed=number_needed, 
+    #                         shift_duration_days=days, 
+    #                         shift_duration_hours=hours, 
+    #                         shift_duration_minutes=minutes,
+    #                         difficulty_multiplier=difficulty_multiplier, # ADD to object creation
+    #                         scheduling_period_id=period.id,
+    #                         work_start_time=work_start_time,
+    #                         work_end_time=work_end_time,
+    #                         is_overnight_shift=is_overnight_shift
+    #                     )
+    #                     db.session.add(new_role)
+    #                     db.session.commit()
+                        
+    #                     time_info = ""
+    #                     if has_time_restrictions:
+    #                         time_info = f" (Working hours: {work_start_time_str} - {work_end_time_str}{'next day' if is_overnight_shift else ''})"
+                        
+    #                     flash(f"Job Role '{role_name}' added to period '{period.name}'.{time_info}", "success")
+                        
+    #     except ValueError: 
+    #         flash("Invalid number for 'Needed' , 'Duration' or 'Multiplier' fields.", "danger")
+    #     except Exception as e: 
+    #         db.session.rollback()
+    #         flash(f"Error adding job role: {e}", "danger")
+    #         current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
+    #     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
     if request.method == 'POST':
         try:
             role_name = request.form.get('role_name')
@@ -292,8 +384,8 @@ def manage_job_roles_for_period(period_id):
             hours_str = request.form.get('duration_hours', '0')
             minutes_str = request.form.get('duration_minutes', '0')
             
-            # GET the new multiplier value
-            difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1.0')
+            # UPDATED: Handle the new 1-5 difficulty range
+            difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1')
 
             # Time constraint fields
             has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
@@ -310,8 +402,11 @@ def manage_job_roles_for_period(period_id):
                 hours = int(hours_str) 
                 minutes = int(minutes_str)
 
-                # CONVERT multiplier to float
-                difficulty_multiplier = float(difficulty_multiplier_str)
+                # UPDATED: Convert multiplier to int and validate range 1-5
+                difficulty_multiplier = int(difficulty_multiplier_str)
+                if difficulty_multiplier < 1 or difficulty_multiplier > 5:
+                    flash("Difficulty level must be between 1 and 5.", "danger")
+                    return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
                 
                 if number_needed < 1: 
                     flash("Number needed must be at least 1.", "danger")
@@ -354,7 +449,7 @@ def manage_job_roles_for_period(period_id):
                             shift_duration_days=days, 
                             shift_duration_hours=hours, 
                             shift_duration_minutes=minutes,
-                            difficulty_multiplier=difficulty_multiplier, # ADD to object creation
+                            difficulty_multiplier=float(difficulty_multiplier), # Convert to float for database
                             scheduling_period_id=period.id,
                             work_start_time=work_start_time,
                             work_end_time=work_end_time,
@@ -367,10 +462,11 @@ def manage_job_roles_for_period(period_id):
                         if has_time_restrictions:
                             time_info = f" (Working hours: {work_start_time_str} - {work_end_time_str}{'next day' if is_overnight_shift else ''})"
                         
-                        flash(f"Job Role '{role_name}' added to period '{period.name}'.{time_info}", "success")
+                        difficulty_labels = {1: "Easy/Regular", 2: "Light", 3: "Moderate", 4: "Hard", 5: "Very Hard"}
+                        flash(f"Job Role '{role_name}' added with difficulty level {difficulty_multiplier} ({difficulty_labels[difficulty_multiplier]}).{time_info}", "success")
                         
         except ValueError: 
-            flash("Invalid number for 'Needed' , 'Duration' or 'Multiplier' fields.", "danger")
+            flash("Invalid number for 'Needed', 'Duration' or 'Difficulty' fields.", "danger")
         except Exception as e: 
             db.session.rollback()
             flash(f"Error adding job role: {e}", "danger")
@@ -408,138 +504,8 @@ def delete_job_role(period_id, role_id):
     flash(f"Job Role '{role.name}' and its generated slots/assignments deleted.", "info")
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
 
-# @main_bp.route('/period/<int:period_id>/generate_slots', methods=['POST'])
-# def generate_coverage_slots_for_period(period_id):
-#     period = SchedulingPeriod.query.get_or_404(period_id)
-#     job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
-
-#     if not job_roles_for_period:
-#         flash("No job roles defined for this period. Cannot generate coverage slots.", "warning")
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-
-#     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
-#                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
-#     if ids_to_delete_assignments:
-#         ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
-#     ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
-#     db.session.commit()
-
-#     total_new_slots_generated = 0
-#     for role in job_roles_for_period:
-#         role_slots_generated = 0
-#         current_dt_for_role = period.period_start_datetime
-#         duration = role.get_duration_timedelta()
-
-#         if duration.total_seconds() <= 0:
-#             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration.")
-#             continue
-
-#         max_iter = 5000
-#         iter_count = 0 
-        
-#         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
-#             iter_count += 1
-            
-#             # Check if current time is within role's working hours
-#             if role.has_time_restrictions():
-#                 if not is_time_within_role_restrictions(current_dt_for_role, role):
-#                     # Move to next valid time slot
-#                     if role.is_overnight_shift:
-#                         # For overnight shifts, find next start time
-#                         next_start = current_dt_for_role.replace(
-#                             hour=role.work_start_time.hour, 
-#                             minute=role.work_start_time.minute, 
-#                             second=0, 
-#                             microsecond=0
-#                         )
-#                         if next_start <= current_dt_for_role:
-#                             next_start += timedelta(days=1)
-#                         current_dt_for_role = next_start
-#                     else:
-#                         # For day shifts, find next start time
-#                         next_start = current_dt_for_role.replace(
-#                             hour=role.work_start_time.hour, 
-#                             minute=role.work_start_time.minute, 
-#                             second=0, 
-#                             microsecond=0
-#                         )
-#                         if next_start <= current_dt_for_role:
-#                             next_start += timedelta(days=1)
-#                         current_dt_for_role = next_start
-#                     continue
-            
-#             slot_start = current_dt_for_role
-#             slot_end = current_dt_for_role + duration
-            
-#             # For time-restricted roles, ensure slot doesn't exceed working hours
-#             if role.has_time_restrictions():
-#                 if role.is_overnight_shift:
-#                     # For overnight shifts, check if slot end goes beyond end time (next day)
-#                     next_day_end = (slot_start.replace(
-#                         hour=role.work_end_time.hour, 
-#                         minute=role.work_end_time.minute, 
-#                         second=0, 
-#                         microsecond=0
-#                     ) + timedelta(days=1))
-                    
-#                     if slot_end > next_day_end:
-#                         slot_end = next_day_end
-#                 else:
-#                     # For day shifts, check if slot end goes beyond end time (same day)
-#                     same_day_end = slot_start.replace(
-#                         hour=role.work_end_time.hour, 
-#                         minute=role.work_end_time.minute, 
-#                         second=0, 
-#                         microsecond=0
-#                     )
-                    
-#                     if slot_end > same_day_end:
-#                         slot_end = same_day_end
-            
-#             # Ensure slot doesn't exceed period end
-#             if slot_end > period.period_end_datetime:
-#                 slot_end = period.period_end_datetime
-            
-#             if slot_start < slot_end:
-#                 for i in range(1, role.number_needed + 1):
-#                     new_slot = ShiftDefinition(
-#                         slot_start_datetime=slot_start, 
-#                         slot_end_datetime=slot_end,
-#                         instance_number=i, 
-#                         scheduling_period_id=period.id, 
-#                         job_role_id=role.id
-#                     )
-#                     db.session.add(new_slot)
-#                     role_slots_generated += 1
-            
-#             # Move to next slot time
-#             current_dt_for_role = slot_end
-            
-#             if current_dt_for_role >= period.period_end_datetime:
-#                 break
-                
-#         if iter_count >= max_iter: 
-#             flash(f"Max iterations for role '{role.name}'.", "warning")
-        
-#         total_new_slots_generated += role_slots_generated
-        
-#         # Log information about what was generated
-#         if role.has_time_restrictions():
-#             current_app.logger.info(f"Generated {role_slots_generated} time-restricted slots for role '{role.name}' ({role.get_working_hours_str()})")
-#         else:
-#             current_app.logger.info(f"Generated {role_slots_generated} all-day slots for role '{role.name}'")
-
-#     if total_new_slots_generated > 0:
-#         try:
-#             db.session.commit()
-#             flash(f"{total_new_slots_generated} slots generated for '{period.name}'.", "success")
-#         except Exception as e:
-#             db.session.rollback()
-#             flash(f"Error committing slots: {e}", "danger")
-#             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
-#     else:
-#         flash("No new slots generated. Check role durations.", "warning")
-#     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+# --- Job Role Editing Route ---
+# This route allows editing an existing job role for a scheduling period.
 
 @main_bp.route('/period/<int:period_id>/role/<int:role_id>/edit', methods=['GET', 'POST'])
 def edit_job_role(period_id, role_id):
@@ -554,6 +520,9 @@ def edit_job_role(period_id, role_id):
             days_str = request.form.get('duration_days', '0')
             hours_str = request.form.get('duration_hours', '0')
             minutes_str = request.form.get('duration_minutes', '0')
+            
+            # UPDATED: Handle the new 1-5 difficulty range
+            difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1')
 
             has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
             work_start_time_str = request.form.get('work_start_time')
@@ -569,6 +538,12 @@ def edit_job_role(period_id, role_id):
             days = int(days_str)
             hours = int(hours_str)
             minutes = int(minutes_str)
+            
+            # UPDATED: Convert multiplier to int and validate range 1-5
+            difficulty_multiplier = int(difficulty_multiplier_str)
+            if difficulty_multiplier < 1 or difficulty_multiplier > 5:
+                flash("Difficulty level must be between 1 and 5.", "danger")
+                return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
 
             if number_needed < 1:
                 flash("Number needed must be at least 1.", "danger")
@@ -616,12 +591,15 @@ def edit_job_role(period_id, role_id):
             role.shift_duration_days = days
             role.shift_duration_hours = hours
             role.shift_duration_minutes = minutes
+            role.difficulty_multiplier = float(difficulty_multiplier)  # Convert to float for database
             role.work_start_time = work_start_time
             role.work_end_time = work_end_time
             role.is_overnight_shift = is_overnight_shift if has_time_restrictions else False
 
             db.session.commit()
-            flash(f"Job Role '{role.name}' updated.", "success")
+            
+            difficulty_labels = {1: "Easy/Regular", 2: "Light", 3: "Moderate", 4: "Hard", 5: "Very Hard"}
+            flash(f"Job Role '{role.name}' updated with difficulty level {difficulty_multiplier} ({difficulty_labels[difficulty_multiplier]}).", "success")
             return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
 
         except Exception as e:
@@ -632,6 +610,98 @@ def edit_job_role(period_id, role_id):
 
     # GET request
     return render_template('edit_job_role.html', period=period, role=role)
+
+# @main_bp.route('/period/<int:period_id>/role/<int:role_id>/edit', methods=['GET', 'POST'])
+# def edit_job_role(period_id, role_id):
+#     """Edit an existing job role for a scheduling period"""
+#     period = SchedulingPeriod.query.get_or_404(period_id)
+#     role = JobRole.query.filter_by(id=role_id, scheduling_period_id=period_id).first_or_404()
+
+#     if request.method == 'POST':
+#         try:
+#             role_name = request.form.get('role_name')
+#             number_needed_str = request.form.get('number_needed', '1')
+#             days_str = request.form.get('duration_days', '0')
+#             hours_str = request.form.get('duration_hours', '0')
+#             minutes_str = request.form.get('duration_minutes', '0')
+
+#             has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
+#             work_start_time_str = request.form.get('work_start_time')
+#             work_end_time_str = request.form.get('work_end_time')
+#             is_overnight_shift = request.form.get('is_overnight_shift') == 'on'
+
+#             if not role_name or not role_name.strip():
+#                 flash("Job role name is required.", "danger")
+#                 return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+#             role_name = role_name.strip()
+#             number_needed = int(number_needed_str)
+#             days = int(days_str)
+#             hours = int(hours_str)
+#             minutes = int(minutes_str)
+
+#             if number_needed < 1:
+#                 flash("Number needed must be at least 1.", "danger")
+#                 return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+#             total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
+#             if total_duration_minutes < 20:
+#                 flash("Minimum shift duration for a role is 20 minutes.", "danger")
+#                 return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+#             if days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60:
+#                 flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+#                 return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+#             # Check if another role with same name exists in this period
+#             existing_role = JobRole.query.filter(
+#                 JobRole.scheduling_period_id == period_id,
+#                 JobRole.name.ilike(role_name),
+#                 JobRole.id != role_id
+#             ).first()
+#             if existing_role:
+#                 flash(f"Job role '{role_name}' already exists for this period.", "danger")
+#                 return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+#             work_start_time = None
+#             work_end_time = None
+#             if has_time_restrictions:
+#                 if not work_start_time_str or not work_end_time_str:
+#                     flash("Both start and end times are required when restricting working hours.", "danger")
+#                     return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+#                 try:
+#                     work_start_time = datetime.strptime(work_start_time_str, '%H:%M').time()
+#                     work_end_time = datetime.strptime(work_end_time_str, '%H:%M').time()
+#                     if not is_overnight_shift and work_end_time <= work_start_time:
+#                         flash("End time must be after start time for same-day shifts.", "danger")
+#                         return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+#                     elif is_overnight_shift and work_end_time >= work_start_time:
+#                         flash("For overnight shifts, end time should be earlier than start time (next day).", "warning")
+#                 except ValueError:
+#                     flash("Invalid time format. Please use HH:MM format.", "danger")
+#                     return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+#             # Update role
+#             role.name = role_name
+#             role.number_needed = number_needed
+#             role.shift_duration_days = days
+#             role.shift_duration_hours = hours
+#             role.shift_duration_minutes = minutes
+#             role.work_start_time = work_start_time
+#             role.work_end_time = work_end_time
+#             role.is_overnight_shift = is_overnight_shift if has_time_restrictions else False
+
+#             db.session.commit()
+#             flash(f"Job Role '{role.name}' updated.", "success")
+#             return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+
+#         except Exception as e:
+#             db.session.rollback()
+#             flash(f"Error updating job role: {e}", "danger")
+#             current_app.logger.error(f"Error updating job role {role_id} for period {period_id}: {e}\n{request.form}")
+#             return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+#     # GET request
+#     return render_template('edit_job_role.html', period=period, role=role)
 
 # --- Worker and Constraint Routes ---
 @main_bp.route('/manage_workers', methods=['GET', 'POST'])

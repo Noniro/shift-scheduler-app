@@ -55,10 +55,19 @@
                         <div class="form-group col-md-4"><label for="duration_minutes">Minutes:</label><input type="number" class="form-control" id="duration_minutes" name="duration_minutes" value="0" min="0" max="59" step="5" required></div>
                     </div>
 
-                    {# NEW SLIDER SECTION for Difficulty Multiplier #}
+                    {# UPDATED SLIDER SECTION for Difficulty Multiplier - Now 1-5 #}
                     <div class="form-group">
-                        <label for="difficulty_multiplier">Difficulty Multiplier: <span id="multiplier_value_display" class="badge badge-primary">1.0</span></label>
-                        <input type="range" class="custom-range" id="difficulty_multiplier" name="difficulty_multiplier" min="1.0" max="10.0" step="0.1" value="1.0">
+                        <label for="difficulty_multiplier">
+                            Difficulty Level: <span id="multiplier_value_display" class="badge badge-primary">1 - Easy/Regular</span>
+                        </label>
+                        <input type="range" class="custom-range" id="difficulty_multiplier" name="difficulty_multiplier" min="1" max="5" step="1" value="1">
+                        <div class="d-flex justify-content-between small text-muted mt-1">
+                            <span>1 - Easy/Regular</span>
+                            <span>2 - Light</span>
+                            <span>3 - Moderate</span>
+                            <span>4 - Hard</span>
+                            <span>5 - Very Hard</span>
+                        </div>
                         <small class="text-muted">Higher values mean the role is more difficult and will be prioritized for balancing work distribution.</small>
                     </div>
                     
@@ -119,18 +128,34 @@
                             {% if role.shift_duration_minutes > 0 %}{{ role.shift_duration_minutes }}m{% endif %}
                             {% if role.shift_duration_days == 0 and role.shift_duration_hours == 0 and role.shift_duration_minutes == 0 %}0m (Warning: No duration!){% endif %}
                         </small><br>
-                        {# DISPLAY the multiplier #}
-                        <small><strong>Difficulty:</strong> <span class="badge badge-pill badge-info">{{ "%.1f"|format(role.difficulty_multiplier) }}x</span></small><br>
+                        {# UPDATED DISPLAY for difficulty - show descriptive text #}
+                        <small><strong>Difficulty:</strong> 
+                            <span class="badge badge-pill 
+                                {% if role.difficulty_multiplier == 1 %}badge-success
+                                {% elif role.difficulty_multiplier == 2 %}badge-info
+                                {% elif role.difficulty_multiplier == 3 %}badge-warning
+                                {% elif role.difficulty_multiplier == 4 %}badge-danger
+                                {% else %}badge-dark{% endif %}">
+                                {{ role.difficulty_multiplier|int }} - 
+                                {% if role.difficulty_multiplier == 1 %}Easy/Regular
+                                {% elif role.difficulty_multiplier == 2 %}Light
+                                {% elif role.difficulty_multiplier == 3 %}Moderate
+                                {% elif role.difficulty_multiplier == 4 %}Hard
+                                {% else %}Very Hard{% endif %}
+                            </span>
+                        </small><br>
                         <small><strong>Working Hours:</strong> 
                             <span class="badge badge-pill {% if role.has_time_restrictions() %}badge-warning{% else %}badge-success{% endif %}">
                                 {{ role.get_working_hours_str() }}
                             </span>
                         </small>
                     </div>
-                        <a href="{{ url_for('main.edit_job_role', period_id=period.id, role_id=role.id) }}" class="btn btn-warning btn-sm mr-1">Edit</a>
-                    <form method="POST" action="{{ url_for('main.delete_job_role', period_id=period.id, role_id=role.id) }}" style="display: inline;">
-                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('DELETE role \'{{role.name}}\' and ALL its generated slots/assignments? This cannot be undone.');">Delete Role</button>
-                    </form>
+                    <div class="btn-group" role="group">
+                        <a href="{{ url_for('main.edit_job_role', period_id=period.id, role_id=role.id) }}" class="btn btn-warning btn-sm mr-1" title="Edit Role">Edit</a>
+                        <form method="POST" action="{{ url_for('main.delete_job_role', period_id=period.id, role_id=role.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('DELETE role \'{{role.name}}\' and ALL its generated slots/assignments? This cannot be undone.');">Delete</button>
+                        </form>
+                    </div>
                 </li>
             {% endfor %}
             </ul>
@@ -196,15 +221,33 @@
 
 {% block scripts %}{{ super() }}
 <script>
-// Script for the difficulty slider
+// UPDATED Script for the difficulty slider - now 1-5 with descriptive labels
 const slider = document.getElementById('difficulty_multiplier');
 const display = document.getElementById('multiplier_value_display');
+
 if (slider && display) {
+    const difficultyLabels = {
+        1: '1 - Easy/Regular',
+        2: '2 - Light', 
+        3: '3 - Moderate',
+        4: '4 - Hard',
+        5: '5 - Very Hard'
+    };
+    
+    const difficultyColors = {
+        1: 'badge-success',
+        2: 'badge-info',
+        3: 'badge-warning', 
+        4: 'badge-danger',
+        5: 'badge-dark'
+    };
+    
     slider.addEventListener('input', function() {
-        display.textContent = parseFloat(this.value).toFixed(1);
+        const value = parseInt(this.value);
+        display.textContent = difficultyLabels[value];
+        display.className = `badge ${difficultyColors[value]}`;
     });
 }
-
 
 function toggleTimeRestrictions() {
     const checkbox = document.getElementById('has_time_restrictions');

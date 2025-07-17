@@ -6,71 +6,116 @@
     <div class="col-md-8">
         <div class="card shadow-sm">
             <div class="card-header bg-warning text-dark">
-                <h4 class="mb-0">Edit Job Role</h4>
+                <h4 class="mb-0">Edit Job Role: {{ role.name }}</h4>
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('main.edit_job_role', period_id=period.id, role_id=role.id) }}" class="needs-validation" novalidate>
                     <div class="form-group">
                         <label for="role_name">Role Name:</label>
-                        <input type="text" class="form-control" id="role_name" name="role_name" value="{{ role.name }}" required>
+                        <input type="text" class="form-control" id="role_name" name="role_name" 
+                               value="{{ role.name }}" required>
                         <div class="invalid-feedback">Role name is required.</div>
                     </div>
+                    
                     <div class="form-group">
-                        <label for="number_needed">Number Needed Simultaneously:</label>
-                        <input type="number" class="form-control" id="number_needed" name="number_needed" value="{{ role.number_needed }}" min="1" required>
+                        <label for="number_needed">Number of Workers Needed Simultaneously:</label>
+                        <input type="number" class="form-control" id="number_needed" name="number_needed" 
+                               value="{{ role.number_needed }}" min="1" required>
                         <div class="invalid-feedback">At least 1 worker needed.</div>
                     </div>
-
-                    <p><strong>Standard Shift Duration:</strong></p>
+                    
+                    <p><strong>Standard Shift Duration for this Role:</strong> (Min 20 minutes total)</p>
                     <div class="form-row">
                         <div class="form-group col-md-4">
                             <label for="duration_days">Days:</label>
-                            <input type="number" class="form-control" id="duration_days" name="duration_days" value="{{ role.shift_duration_days }}" min="0" max="30" required>
+                            <input type="number" class="form-control" id="duration_days" name="duration_days" 
+                                   value="{{ role.shift_duration_days }}" min="0" max="30" required>
                         </div>
                         <div class="form-group col-md-4">
                             <label for="duration_hours">Hours:</label>
-                            <input type="number" class="form-control" id="duration_hours" name="duration_hours" value="{{ role.shift_duration_hours }}" min="0" max="23" required>
+                            <input type="number" class="form-control" id="duration_hours" name="duration_hours" 
+                                   value="{{ role.shift_duration_hours }}" min="0" max="23" required>
                         </div>
                         <div class="form-group col-md-4">
                             <label for="duration_minutes">Minutes:</label>
-                            <input type="number" class="form-control" id="duration_minutes" name="duration_minutes" value="{{ role.shift_duration_minutes }}" min="0" max="59" step="5" required>
+                            <input type="number" class="form-control" id="duration_minutes" name="duration_minutes" 
+                                   value="{{ role.shift_duration_minutes }}" min="0" max="59" step="5" required>
                         </div>
                     </div>
 
+                    {# UPDATED SLIDER SECTION for Difficulty Multiplier - Now 1-5 #}
+                    <div class="form-group">
+                        <label for="difficulty_multiplier">
+                            Difficulty Level: <span id="multiplier_value_display" class="badge badge-primary">
+                                {{ role.difficulty_multiplier|int }} - 
+                                {% if role.difficulty_multiplier == 1 %}Easy/Regular
+                                {% elif role.difficulty_multiplier == 2 %}Light
+                                {% elif role.difficulty_multiplier == 3 %}Moderate
+                                {% elif role.difficulty_multiplier == 4 %}Hard
+                                {% else %}Very Hard{% endif %}
+                            </span>
+                        </label>
+                        <input type="range" class="custom-range" id="difficulty_multiplier" name="difficulty_multiplier" 
+                               min="1" max="5" step="1" value="{{ role.difficulty_multiplier|int }}">
+                        <div class="d-flex justify-content-between small text-muted mt-1">
+                            <span>1 - Easy/Regular</span>
+                            <span>2 - Light</span>
+                            <span>3 - Moderate</span>
+                            <span>4 - Hard</span>
+                            <span>5 - Very Hard</span>
+                        </div>
+                        <small class="text-muted">Higher values mean the role is more difficult and will be prioritized for balancing work distribution.</small>
+                    </div>
+                    
+                    {# Working Hours Constraints Section #}
                     <hr>
                     <div class="form-group">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="has_time_restrictions" name="has_time_restrictions" onchange="toggleTimeRestrictions()" {% if role.has_time_restrictions() %}checked{% endif %}>
+                            <input class="form-check-input" type="checkbox" id="has_time_restrictions" name="has_time_restrictions" 
+                                   {% if role.has_time_restrictions() %}checked{% endif %} onchange="toggleTimeRestrictions()">
                             <label class="form-check-label" for="has_time_restrictions">
-                                <strong>Restrict Working Hours</strong>
+                                <strong>Restrict Working Hours</strong> (e.g., night shifts only)
                             </label>
                         </div>
                         <small class="text-muted">Check this if this role should only work during specific hours of the day</small>
                     </div>
-
-                    <div id="time_restrictions_section" {% if role.has_time_restrictions() %}style="display: block;"{% else %}style="display: none;"{% endif %}>
+                    
+                    <div id="time_restrictions_section" {% if not role.has_time_restrictions() %}style="display: none;"{% endif %}>
                         <div class="form-row">
                             <div class="form-group col-md-6">
                                 <label for="work_start_time">Work Start Time:</label>
-                                <input type="time" class="form-control" id="work_start_time" name="work_start_time" value="{{ role.work_start_time.strftime('%H:%M') if role.work_start_time else '22:00' }}">
+                                <input type="time" class="form-control" id="work_start_time" name="work_start_time" 
+                                       value="{% if role.work_start_time %}{{ role.work_start_time.strftime('%H:%M') }}{% else %}22:00{% endif %}">
+                                <small class="text-muted">When this role starts working</small>
                             </div>
                             <div class="form-group col-md-6">
                                 <label for="work_end_time">Work End Time:</label>
-                                <input type="time" class="form-control" id="work_end_time" name="work_end_time" value="{{ role.work_end_time.strftime('%H:%M') if role.work_end_time else '06:00' }}">
+                                <input type="time" class="form-control" id="work_end_time" name="work_end_time" 
+                                       value="{% if role.work_end_time %}{{ role.work_end_time.strftime('%H:%M') }}{% else %}06:00{% endif %}">
+                                <small class="text-muted">When this role stops working</small>
                             </div>
                         </div>
                         <div class="form-group">
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="is_overnight_shift" name="is_overnight_shift" {% if role.is_overnight_shift %}checked{% endif %}>
+                                <input class="form-check-input" type="checkbox" id="is_overnight_shift" name="is_overnight_shift"
+                                       {% if role.is_overnight_shift %}checked{% endif %}>
                                 <label class="form-check-label" for="is_overnight_shift">
                                     This is an overnight shift (crosses midnight)
                                 </label>
+                                <small class="form-text text-muted">Check if work end time is the next day (e.g., 22:00 - 06:00)</small>
                             </div>
                         </div>
+                        <div class="alert alert-info">
+                            <small><strong>Example:</strong> For night security (22:00 - 06:00), set start time to 22:00, end time to 06:00, and check "overnight shift"</small>
+                        </div>
                     </div>
-
+                    
+                    <div class="alert alert-warning">
+                        <strong>Warning:</strong> Changing role properties may affect existing shift assignments and scheduling.
+                    </div>
+                    
                     <div class="form-group">
-                        <button type="submit" class="btn btn-warning btn-lg mr-3">Update Role</button>
+                        <button type="submit" class="btn btn-warning btn-lg mr-3">Update Job Role</button>
                         <a href="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" class="btn btn-secondary btn-lg">Cancel</a>
                     </div>
                 </form>
@@ -80,11 +125,41 @@
 </div>
 {% endblock %}
 
-{% block scripts %}{{ super() }}
+{% block scripts %}
+{{ super() }}
 <script>
+// UPDATED Script for the difficulty slider - now 1-5 with descriptive labels
+const slider = document.getElementById('difficulty_multiplier');
+const display = document.getElementById('multiplier_value_display');
+
+if (slider && display) {
+    const difficultyLabels = {
+        1: '1 - Easy/Regular',
+        2: '2 - Light', 
+        3: '3 - Moderate',
+        4: '4 - Hard',
+        5: '5 - Very Hard'
+    };
+    
+    const difficultyColors = {
+        1: 'badge-success',
+        2: 'badge-info',
+        3: 'badge-warning', 
+        4: 'badge-danger',
+        5: 'badge-dark'
+    };
+    
+    slider.addEventListener('input', function() {
+        const value = parseInt(this.value);
+        display.textContent = difficultyLabels[value];
+        display.className = `badge ${difficultyColors[value]}`;
+    });
+}
+
 function toggleTimeRestrictions() {
     const checkbox = document.getElementById('has_time_restrictions');
     const section = document.getElementById('time_restrictions_section');
+    
     if (checkbox.checked) {
         section.style.display = 'block';
         document.getElementById('work_start_time').required = true;
@@ -96,8 +171,8 @@ function toggleTimeRestrictions() {
     }
 }
 
-(function() {
-    'use strict';
+// Bootstrap validation
+(function() {'use strict';
     window.addEventListener('load', function() {
         var forms = document.getElementsByClassName('needs-validation');
         Array.prototype.filter.call(forms, function(f) {
