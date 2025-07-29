@@ -1609,6 +1609,8 @@ def swap_assignments(assignment_id):
     # Also we want to see from each role how each worker performed, how many shifts were assigned to each worker, etc.
 
 # The statistics route to display fairness and workload distribution
+from collections import defaultdict
+
 @main_bp.route('/period/<int:period_id>/fairness_statistics')
 def fairness_statistics(period_id):
     """Display fairness and workload distribution statistics for a period."""
@@ -1616,7 +1618,11 @@ def fairness_statistics(period_id):
     all_workers = Worker.query.order_by(Worker.name).all()
     all_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
 
-    # Eagerly load all necessary data for the period
+    if not all_workers:
+        flash("No workers found to generate statistics.", "warning")
+        return redirect(url_for('main.manage_workers'))
+
+    # Eagerly load all necessary data
     all_assignments = ScheduledShift.query.options(
         joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role),
         joinedload(ScheduledShift.worker_assigned)
@@ -1625,92 +1631,87 @@ def fairness_statistics(period_id):
     ).all()
 
     # --- Initialize Statistics Dictionaries ---
-
-    # Overall stats
     stats = {
-        'total_shifts': len(all_assignments),
-        'assigned_shifts': 0,
-        'unassigned_shifts': 0,
-        'unassigned_shifts_list': [],
-        'worker_stats': {},
-        'role_stats': {}
+        'total_shifts': len(all_assignments), 'assigned_shifts': 0, 'unassigned_shifts': 0,
+        'unassigned_shifts_list': [], 'worker_stats': {}, 'role_stats': {}
     }
-
-    # Initialize worker stats
     period_duration_hours = (period.period_end_datetime - period.period_start_datetime).total_seconds() / 3600.0
+
     for worker in all_workers:
         stats['worker_stats'][worker.id] = {
-            'name': worker.name,
-            'total_shifts': 0,
-            'total_hours': 0.0,
-            'night_shifts': 0,
-            'difficulty_counts': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
-            'downtime_hours': period_duration_hours
+            'name': worker.name, 'total_shifts': 0, 'total_hours': 0.0, 'night_shifts': 0,
+            'weekend_shifts': 0, 'difficulty_counts': defaultdict(int),
+            'downtime_hours': period_duration_hours, 'role_distribution': defaultdict(int)
         }
-
-    # Initialize role stats
     for role in all_roles:
         stats['role_stats'][role.id] = {
-            'name': role.name,
-            'total_shifts': 0,
-            'total_hours': 0.0,
-            'worker_distribution': {},
-            'unique_workers': 0
+            'name': role.name, 'total_shifts': 0, 'total_hours': 0.0,
+            'worker_distribution': defaultdict(int), 'unique_workers': 0
         }
 
     # --- Process All Assignments ---
-
-    NIGHT_START = time(0, 0)
-    NIGHT_END = time(6, 0)
+    NIGHT_START_TIME = time(0, 0)
+    NIGHT_END_TIME = time(6, 0)
 
     for assignment in all_assignments:
         slot = assignment.defined_slot
+        if not slot or not slot.job_role: continue
         role = slot.job_role
-
-        # Update role stats
-        if role and role.id in stats['role_stats']:
-            stats['role_stats'][role.id]['total_shifts'] += 1
-            stats['role_stats'][role.id]['total_hours'] += slot.duration_total_seconds / 3600.0
+        stats['role_stats'][role.id]['total_shifts'] += 1
+        stats['role_stats'][role.id]['total_hours'] += slot.duration_total_seconds / 3600.0
 
         if assignment.worker_assigned:
             stats['assigned_shifts'] += 1
             worker = assignment.worker_assigned
-            worker_id = worker.id
+            worker_stat = stats['worker_stats'][worker.id]
+            duration_hours = slot.duration_total_seconds / 3600.0
+            
+            worker_stat['total_shifts'] += 1
+            worker_stat['total_hours'] += duration_hours
+            worker_stat['downtime_hours'] -= duration_hours
+            
+            # Check for night shift
+            if slot.slot_start_datetime.time() < NIGHT_END_TIME:
+                worker_stat['night_shifts'] += 1
+            
+            # Check for weekend shift (Saturday is 5, Sunday is 6)
+            if slot.slot_start_datetime.weekday() >= 5:
+                worker_stat['weekend_shifts'] += 1
 
-            if worker_id in stats['worker_stats']:
-                # Update worker stats
-                worker_stat = stats['worker_stats'][worker_id]
-                duration_hours = slot.duration_total_seconds / 3600.0
+            # Difficulty & Role Distribution
+            worker_stat['difficulty_counts'][int(role.difficulty_multiplier)] += 1
+            worker_stat['role_distribution'][role.name] += 1
+            stats['role_stats'][role.id]['worker_distribution'][worker.name] += 1
 
-                worker_stat['total_shifts'] += 1
-                worker_stat['total_hours'] += duration_hours
-                worker_stat['downtime_hours'] -= duration_hours
-
-                # Check for night shift (any part of shift between 00:00 and 06:00)
-                # This is a simplified check. It's true if the shift starts before 6 AM
-                # or ends after midnight on the same day.
-                if slot.slot_start_datetime.time() < NIGHT_END or slot.slot_end_datetime.time() > NIGHT_START:
-                     # A more accurate check would handle shifts spanning midnight properly
-                    if (slot.slot_start_datetime.time() < NIGHT_END) or \
-                       (slot.slot_end_datetime.time() > NIGHT_START and slot.slot_end_datetime.date() > slot.slot_start_datetime.date()):
-                        worker_stat['night_shifts'] += 1
-
-                # Update difficulty counts
-                difficulty = int(role.difficulty_multiplier)
-                if difficulty in worker_stat['difficulty_counts']:
-                    worker_stat['difficulty_counts'][difficulty] += 1
-
-                # Update role's worker distribution
-                if role and role.id in stats['role_stats']:
-                    role_stat = stats['role_stats'][role.id]
-                    role_stat['worker_distribution'][worker.name] = role_stat['worker_distribution'].get(worker.name, 0) + 1
-
-        else: # Unassigned
+        else:
             stats['unassigned_shifts'] += 1
             stats['unassigned_shifts_list'].append(assignment)
 
-    # Finalize role stats
     for role_stat in stats['role_stats'].values():
         role_stat['unique_workers'] = len(role_stat['worker_distribution'])
 
-    return render_template('fairness_statistics.html', period=period, stats=stats)
+    # --- Generate Key Fairness Insights ---
+    insights = []
+    if stats['assigned_shifts'] > 0:
+        active_workers = [w for w in stats['worker_stats'].values() if w['total_shifts'] > 0]
+        if not active_workers: active_workers = stats['worker_stats'].values()
+        
+        avg_hours = sum(w['total_hours'] for w in active_workers) / len(active_workers)
+        avg_night = sum(w['night_shifts'] for w in active_workers) / len(active_workers)
+        avg_weekend = sum(w['weekend_shifts'] for w in active_workers) / len(active_workers)
+        
+        for w in stats['worker_stats'].values():
+            if w['total_hours'] > avg_hours * 1.5:
+                insights.append(f"<b>{w['name']}</b> is working significantly more hours ({w['total_hours']:.1f}) than the average ({avg_hours:.1f}).")
+            if w['total_hours'] < avg_hours * 0.5 and w['total_shifts'] > 0:
+                 insights.append(f"<b>{w['name']}</b> is working significantly fewer hours ({w['total_hours']:.1f}) than the average ({avg_hours:.1f}).")
+            if avg_night > 0.5 and w['night_shifts'] > avg_night * 1.75:
+                insights.append(f"<b>{w['name']}</b> has a high number of night shifts ({w['night_shifts']}).")
+            if avg_weekend > 0.5 and w['weekend_shifts'] > avg_weekend * 1.75:
+                 insights.append(f"<b>{w['name']}</b> has a high number of weekend shifts ({w['weekend_shifts']}).")
+            if w['total_shifts'] == 0:
+                insights.append(f"<b>{w['name']}</b> was not assigned any shifts.")
+    if stats['unassigned_shifts'] > 0:
+        insights.append(f"There are <b>{stats['unassigned_shifts']} unassigned shifts</b> that need coverage.")
+
+    return render_template('fairness_statistics.html', period=period, stats=stats, insights=insights)
