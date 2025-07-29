@@ -1,17 +1,20 @@
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title>{% block title %}Shift Scheduler{% endblock %}</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
+
 <body>
     <nav class="navbar navbar-expand-md navbar-light bg-light mb-4">
         <a class="navbar-brand" href="{{ url_for('main.index') }}">Shift Scheduler</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse"
+            aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarCollapse">
@@ -22,9 +25,17 @@
                 <li class="nav-item {% if request.endpoint == 'main.manage_periods' %}active{% endif %}">
                     <a class="nav-link" href="{{ url_for('main.manage_periods') }}">Scheduling Periods</a>
                 </li>
+                </li>
                 <li class="nav-item {% if request.endpoint == 'main.manage_workers' %}active{% endif %}">
                     <a class="nav-link" href="{{ url_for('main.manage_workers') }}">Manage Workers</a>
                 </li>
+                {% if session.get('active_period_id') %}
+                <li class="nav-item {% if request.endpoint == 'main.fairness_statistics' %}active{% endif %}">
+                    <a class="nav-link"
+                        href="{{ url_for('main.fairness_statistics', period_id=session.get('active_period_id')) }}">Fairness
+                        Statistics</a>
+                </li>
+                {% endif %}
             </ul>
             {% if current_user_name %}
             <span class="navbar-text mr-3">
@@ -36,16 +47,16 @@
     </nav>
     <main role="main" class="container">
         {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                        <span aria-hidden="true">×</span>
-                    </button>
-                </div>
-                {% endfor %}
-            {% endif %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                <span aria-hidden="true">×</span>
+            </button>
+        </div>
+        {% endfor %}
+        {% endif %}
         {% endwith %}
         {% block content %}{% endblock %}
     </main>
@@ -55,4 +66,5 @@
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
     {% block scripts %}{% endblock %}
 </body>
+
 </html>
