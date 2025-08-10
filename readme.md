@@ -1,9 +1,3 @@
-Of course. Now that you have a downloadable release, it's the perfect time to update the `README.md` to be more professional and guide users directly to the download.
-
-Here is a revised, professional-looking `README.md`. It's structured to serve two audiences: users who just want to download the app, and developers who want to run the code from the source.
-
----
-
 # Shift Scheduler Application
 
 The Shift Scheduler is a web-based application designed to automate and simplify the process of creating and managing employee work schedules. It provides a robust platform for defining scheduling periods, job roles, and worker availability.
