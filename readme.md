@@ -8,7 +8,7 @@ The core of the application is a fair-share scheduling algorithm designed to dis
 
 For users who want to run the application without installing Python or any dependencies, a standalone executable for Windows is available.
 
-**➡️ [Download the latest release here](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/releases)**
+**➡️ [Download the latest release here](https://github.com/Noniro/shift-scheduler-app/releases)**
 
 1.  Navigate to the link above to find the latest version.
 2.  Download the `Shift.Scheduler.exe` file from the "Assets" section.
@@ -91,5 +91,3 @@ Potential future enhancements include:
 -   A dedicated mobile application for workers.
 
 ---
-
-**Important:** Remember to replace both instances of `https://github.com/YOUR_USERNAME/YOUR_REPO_NAME` with the actual URL of your GitHub repository.
