@@ -1,131 +1,38 @@
-# from app import create_app, db
-# from app.models import User, SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift # Added JobRole
-
-# app = create_app()
-
-# @app.shell_context_processor
-# def make_shell_context():
-#     return {
-#         'db': db,
-#         'User': User,
-#         'SchedulingPeriod': SchedulingPeriod,
-#         'JobRole': JobRole, # Added
-#         'ShiftDefinition': ShiftDefinition,
-#         'Worker': Worker,
-#         'Constraint': Constraint,
-#         'ScheduledShift': ScheduledShift
-#     }
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
-
-# run.py
-
-# from app import create_app, db
-# from app.models import User, SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift # Added JobRole
-# import webbrowser
-# from threading import Timer
-# import os # To check for Werkzeug reloader
-
-# app = create_app()
-
-# @app.shell_context_processor
-# def make_shell_context():
-#     return {
-#         'db': db,
-#         'User': User,
-#         'SchedulingPeriod': SchedulingPeriod,
-#         'JobRole': JobRole, # Added
-#         'ShiftDefinition': ShiftDefinition,
-#         'Worker': Worker,
-#         'Constraint': Constraint,
-#         'ScheduledShift': ScheduledShift
-#     }
-
-# def open_browser():
-#     """Opens the default web browser to the Flask app's URL."""
-#     # Ensure this URL matches what app.run() will use
-#     webbrowser.open_new_tab("http://127.0.0.1:5000/")
-
-
-
-# # Ensure the script runs only when executed directly, not when imported
-# # For running use `python run.py` or `flask run` if FLASK_APP is set to this file
-# if __name__ == '__main__':
-#     # Define host and port to ensure consistency
-#     HOST = '127.0.0.1'
-#     PORT = 5000
-
-#     # TODO add --input "ip:port" to run.py
-
-#     # When using Flask's reloader (debug=True), app.run() is called twice.
-#     # The first time in the main process, and the second time in a child process.
-#     # We only want to open the browser from the main process.
-#     # Werkzeug sets WERKZEUG_RUN_MAIN to 'true' in the reloaded subprocess.
-#     # So, if it's not set, or not 'true', this is the initial launch.
-#     if not os.environ.get("WERKZEUG_RUN_MAIN"):
-#         # Open the browser after a short delay to give the server time to start.
-#         # 1 second should generally be enough for a local dev server.
-#         Timer(1, open_browser).start()
-
-#     app.run(debug=True, host=HOST, port=PORT, use_reloader=True)
-#     # By default, debug=True implies use_reloader=True. Explicitly setting it for clarity.
-#     # If you set use_reloader=False, the WERKZEUG_RUN_MAIN check is less critical
-#     # but still good practice.
-
-from app import create_app, db
-from app.models import User, SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift # Added JobRole
+import os
+import sys
 import webbrowser
 from threading import Timer
-import os # To check for Werkzeug reloader
-import argparse  # For command-line arguments
+from waitress import serve
+from app import create_app, db
 
+# Create the Flask app instance
 app = create_app()
 
-@app.shell_context_processor
-def make_shell_context():
-    return {
-        'db': db,
-        'User': User,
-        'SchedulingPeriod': SchedulingPeriod,
-        'JobRole': JobRole, # Added
-        'ShiftDefinition': ShiftDefinition,
-        'Worker': Worker,
-        'Constraint': Constraint,
-        'ScheduledShift': ScheduledShift
-    }
+# Function to ensure the database is created
+def setup_database(app_instance):
+    with app_instance.app_context():
+        # This checks if the db file exists. If not, it creates it and the tables.
+        # This is crucial for the first time a user runs the .exe
+        if not os.path.exists(os.path.join(os.path.dirname(__file__), 'app.db')):
+             print("Database not found, creating a new one...")
+             db.create_all()
+             print("Database created.")
+        else:
+             print("Database already exists.")
 
-def open_browser(host, port):
-    """Opens the default web browser to the Flask app's URL."""
-    # Ensure this URL matches what app.run() will use
-    webbrowser.open_new_tab(f"http://{host}:{port}/")
 
-# Ensure the script runs only when executed directly, not when imported
-# For running use `python run.py` or `flask run` if FLASK_APP is set to this file
+# Function to open the browser
+def open_browser():
+    # Opens the URL in a new tab
+      webbrowser.open_new("http://127.0.0.1:8080")
+
 if __name__ == '__main__':
-    # Set up command-line argument parsing
-    parser = argparse.ArgumentParser(description='Run the Shift Scheduler application')
-    parser.add_argument('--ip', type=str, default='127.0.0.1', 
-                        help='IP address to run the server on (default: 127.0.0.1)')
-    parser.add_argument('--port', type=int, default=5000, 
-                        help='Port to run the server on (default: 5000)')
-    args = parser.parse_args()
+    # Set up the database within the app context
+    setup_database(app)
 
-    # Use the provided arguments
-    HOST = args.ip
-    PORT = args.port
+    # Open the web browser 1 second after the server starts
+    Timer(1, open_browser).start()
 
-    # When using Flask's reloader (debug=True), app.run() is called twice.
-    # The first time in the main process, and the second time in a child process.
-    # We only want to open the browser from the main process.
-    # Werkzeug sets WERKZEUG_RUN_MAIN to 'true' in the reloaded subprocess.
-    # So, if it's not set, or not 'true', this is the initial launch.
-    if not os.environ.get("WERKZEUG_RUN_MAIN"):
-        # Open the browser after a short delay to give the server time to start.
-        # 1 second should generally be enough for a local dev server.
-        Timer(1, lambda: open_browser(HOST, PORT)).start()
-
-    app.run(debug=True, host=HOST, port=PORT, use_reloader=True)
-    # By default, debug=True implies use_reloader=True. Explicitly setting it for clarity.
-    # If you set use_reloader=False, the WERKZEUG_RUN_MAIN check is less critical
-    # but still good practice.
+    # Start the Waitress server
+    print("Starting server on http://127.0.0.1:8080")
+    serve(app, host='127.0.0.1', port=8080)
