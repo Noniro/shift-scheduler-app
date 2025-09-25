@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Import Worker Ratings for {{ period.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Import Worker Difficulty Ratings</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h5 class="alert-heading">Before You Import:</h5>
+                    <ul class="mb-0">
+                        <li>Make sure workers have filled out the exported CSV template</li>
+                        <li>Only ratings from <strong>qualified workers</strong> will be processed</li>
+                        <li>Ratings must be between <strong>1 (Easy) and 5 (Very Hard)</strong></li>
+                        <li>Multiple ratings for the same role will be <strong>averaged</strong></li>
+                        <li>Empty ratings will be ignored (workers can skip roles)</li>
+                    </ul>
+                </div>
+
+                <form method="POST" enctype="multipart/form-data" class="needs-validation" novalidate>
+                    <div class="form-group">
+                        <label for="rating_file">Upload Completed Rating CSV:</label>
+                        <input type="file" class="form-control-file" id="rating_file" name="rating_file" 
+                               accept=".csv" required>
+                        <div class="invalid-feedback">Please select a CSV file to upload.</div>
+                        <small class="text-muted">Only CSV files are accepted.</small>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <strong>Warning:</strong> This will update the difficulty ratings for all job roles in this period. 
+                        The previous difficulty values will be replaced with the average worker ratings.
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-success btn-lg mr-3">
+                            📊 Import Ratings & Update Difficulties
+                        </button>
+                        <a href="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" 
+                           class="btn btn-secondary btn-lg">Cancel</a>
+                    </div>
+                </form>
+
+                <hr>
+                
+                <h5>How It Works:</h5>
+                <ol>
+                    <li><strong>Export Template:</strong> Generate CSV with worker-role combinations</li>
+                    <li><strong>Workers Rate:</strong> Each worker rates roles they're qualified for (1-5)</li>
+                    <li><strong>Import Results:</strong> System calculates average rating per role</li>
+                    <li><strong>Update System:</strong> Job role difficulties updated with worker consensus</li>
+                    <li><strong>Fair Assignment:</strong> Algorithm uses worker-determined difficulty for balanced scheduling</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+// Bootstrap validation
+(function() {'use strict';
+    window.addEventListener('load', function() {
+        var forms = document.getElementsByClassName('needs-validation');
+        Array.prototype.filter.call(forms, function(form) {
+            form.addEventListener('submit', function(event) {
+                if (form.checkValidity() === false) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                form.classList.add('was-validated');
+            }, false);
+        });
+    }, false);
+})();
+</script>
+{% endblock %}
