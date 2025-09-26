@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Import Results - {{ period.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0">Import Results for {{ period.name }}</h4>
+            </div>
+            <div class="card-body">
+                
+                <!-- Summary Statistics -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title text-success">{{ results.processed_count }}</h5>
+                                <p class="card-text">Ratings Processed</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title text-info">{{ results.skipped_count }}</h5>
+                                <p class="card-text">Empty/N/A Skipped</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title text-warning">{{ results.error_count }}</h5>
+                                <p class="card-text">Invalid Ratings</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Role Updates -->
+                {% if results.role_stats %}
+                <h5>Role Difficulty Updates</h5>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Job Role</th>
+                                <th>Old Difficulty</th>
+                                <th>New Difficulty</th>
+                                <th>Change</th>
+                                <th>Worker Ratings</th>
+                                <th>Average Rating</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for role_name, stats in results.role_stats.items() %}
+                            <tr>
+                                <td><strong>{{ role_name }}</strong></td>
+                                <td>
+                                    <span class="badge badge-secondary">{{ "%.2f"|format(stats.old_difficulty) }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge 
+                                        {% if stats.new_difficulty <= 1.5 %}badge-success
+                                        {% elif stats.new_difficulty <= 2.5 %}badge-info  
+                                        {% elif stats.new_difficulty <= 3.5 %}badge-warning
+                                        {% elif stats.new_difficulty <= 4.5 %}badge-danger
+                                        {% else %}badge-dark{% endif %}">
+                                        {{ "%.2f"|format(stats.new_difficulty) }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% set change = stats.new_difficulty - stats.old_difficulty %}
+                                    {% if change > 0 %}
+                                        <span class="text-danger">+{{ "%.2f"|format(change) }}</span>
+                                    {% elif change < 0 %}
+                                        <span class="text-success">{{ "%.2f"|format(change) }}</span>
+                                    {% else %}
+                                        <span class="text-muted">No change</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small>{{ stats.ratings|join(', ') }} ({{ stats.num_ratings }} workers)</small>
+                                </td>
+                                <td>
+                                    <small>{{ "%.2f"|format(stats.avg_rating) }}</small>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- Action Buttons -->
+                <div class="mt-4 text-center">
+                    <a href="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" 
+                       class="btn btn-primary btn-lg mr-3">
+                        Back to Job Roles
+                    </a>
+                    <a href="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}" 
+                       class="btn btn-success btn-lg">
+                        Generate Schedule with New Ratings
+                    </a>
+                </div>
+                
+                <hr>
+                <div class="alert alert-info">
+                    <h6>What Happens Next:</h6>
+                    <ul class="mb-0">
+                        <li>Job role difficulties have been updated based on worker consensus</li>
+                        <li>The scheduling algorithm will now use these ratings for fair assignment</li>
+                        <li>Workers who rated roles as harder will get balanced workloads</li>
+                        <li>Re-generate the schedule to apply the new difficulty ratings</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

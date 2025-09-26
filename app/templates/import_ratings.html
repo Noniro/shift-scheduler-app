@@ -6,37 +6,38 @@
     <div class="col-md-8">
         <div class="card shadow-sm">
             <div class="card-header bg-primary text-white">
-                <h4 class="mb-0">Import Worker Difficulty Ratings</h4>
+                <h4 class="mb-0">Import Worker Difficulty Ratings (Matrix Format)</h4>
             </div>
             <div class="card-body">
                 <div class="alert alert-info">
-                    <h5 class="alert-heading">Before You Import:</h5>
+                    <h5 class="alert-heading">Matrix Format Instructions:</h5>
                     <ul class="mb-0">
-                        <li>Make sure workers have filled out the exported CSV template</li>
-                        <li>Only ratings from <strong>qualified workers</strong> will be processed</li>
-                        <li>Ratings must be between <strong>1 (Easy) and 5 (Very Hard)</strong></li>
-                        <li>Multiple ratings for the same role will be <strong>averaged</strong></li>
-                        <li>Empty ratings will be ignored (workers can skip roles)</li>
+                        <li>The CSV has <strong>workers as rows</strong> and <strong>job roles as columns</strong></li>
+                        <li>Each worker fills out <strong>one row</strong> with ratings for all roles they're qualified for</li>
+                        <li>Ratings must be <strong>integers from 1-5</strong> (1=Easy, 5=Very Hard)</li>
+                        <li>Leave cells <strong>empty or "N/A"</strong> for roles you can't/won't rate</li>
+                        <li>Values will be <strong>automatically normalized</strong> (>5→5, <1→1)</li>
+                        <li>Multiple ratings for the same role are <strong>averaged</strong></li>
                     </ul>
                 </div>
 
                 <form method="POST" enctype="multipart/form-data" class="needs-validation" novalidate>
                     <div class="form-group">
-                        <label for="rating_file">Upload Completed Rating CSV:</label>
+                        <label for="rating_file">Upload Completed Matrix CSV:</label>
                         <input type="file" class="form-control-file" id="rating_file" name="rating_file" 
                                accept=".csv" required>
                         <div class="invalid-feedback">Please select a CSV file to upload.</div>
-                        <small class="text-muted">Only CSV files are accepted.</small>
+                        <small class="text-muted">Only CSV files are accepted. Must use the exported matrix template.</small>
                     </div>
 
                     <div class="alert alert-warning">
                         <strong>Warning:</strong> This will update the difficulty ratings for all job roles in this period. 
-                        The previous difficulty values will be replaced with the average worker ratings.
+                        The previous difficulty values will be replaced with the average worker ratings from the matrix.
                     </div>
 
                     <div class="form-group">
                         <button type="submit" class="btn btn-success btn-lg mr-3">
-                            📊 Import Ratings & Update Difficulties
+                            Import Matrix & Update Difficulties
                         </button>
                         <a href="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" 
                            class="btn btn-secondary btn-lg">Cancel</a>
@@ -45,14 +46,55 @@
 
                 <hr>
                 
-                <h5>How It Works:</h5>
-                <ol>
-                    <li><strong>Export Template:</strong> Generate CSV with worker-role combinations</li>
-                    <li><strong>Workers Rate:</strong> Each worker rates roles they're qualified for (1-5)</li>
-                    <li><strong>Import Results:</strong> System calculates average rating per role</li>
-                    <li><strong>Update System:</strong> Job role difficulties updated with worker consensus</li>
-                    <li><strong>Fair Assignment:</strong> Algorithm uses worker-determined difficulty for balanced scheduling</li>
-                </ol>
+                <h5>Matrix Format Example:</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Worker Name</th>
+                                <th>Cook</th>
+                                <th>Guard</th>
+                                <th>Manager</th>
+                                <th>Cleaner</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="text-muted">
+                                <td><small>Instructions...</small></td>
+                                <td colspan="4"><small>Rate 1-5, leave empty if not qualified</small></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Alice</strong></td>
+                                <td>3</td>
+                                <td>4</td>
+                                <td>N/A</td>
+                                <td>2</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Bob</strong></td>
+                                <td>4</td>
+                                <td></td>
+                                <td>5</td>
+                                <td>3</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Carol</strong></td>
+                                <td>2</td>
+                                <td>5</td>
+                                <td></td>
+                                <td>4</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <h5>Processing Rules:</h5>
+                <ul class="small">
+                    <li><strong>Integer Only:</strong> 3.7 → 4, 2.2 → 2</li>
+                    <li><strong>Normalization:</strong> 6 → 5, 0 → 1</li>
+                    <li><strong>Empty/N/A:</strong> Ignored (worker didn't rate that role)</li>
+                    <li><strong>Averaging:</strong> If multiple workers rate same role: (3+4+2)÷3 = 3.0</li>
+                </ul>
             </div>
         </div>
     </div>

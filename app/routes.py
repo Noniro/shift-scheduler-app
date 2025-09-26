@@ -2085,21 +2085,16 @@ def fairness_statistics(period_id):
 ############### Adding CSV and Excel difficulty export for workers ###############
 # Add these routes to routes.py
 
-# Add these imports at the top of routes.py (with existing imports)
-import pandas as pd
-from collections import defaultdict
-from werkzeug.utils import secure_filename
-
-# Worker Rating System Routes
+# Add these updated functions to your routes.py file
 
 @main_bp.route('/period/<int:period_id>/export_rating_template')
 def export_rating_template(period_id):
-    """Export CSV template for workers to rate job role difficulties"""
+    """Export CSV template in matrix format: Workers as rows, Job Roles as columns"""
     period = SchedulingPeriod.query.get_or_404(period_id)
     
     # Get all workers and job roles for this period
     all_workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
-    job_roles = JobRole.query.filter_by(scheduling_period_id=period.id).all()
+    job_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
     
     if not all_workers:
         flash("No workers found. Add workers before exporting rating template.", "warning")
@@ -2109,45 +2104,47 @@ def export_rating_template(period_id):
         flash("No job roles found for this period.", "warning")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
     
-    # Create CSV data - only include worker-role combinations where worker is qualified
+    # Create CSV data in matrix format
     csv_rows = []
     
-    # Add header row
-    csv_rows.append([
-        'worker_name',
-        'job_role_name', 
-        'difficulty_rating_1_to_5',
-        'comments',
-        'current_difficulty',
-        'qualified'
-    ])
+    # Create header row: Worker Name + all job role names
+    header_row = ['Worker Name'] + [role.name for role in job_roles]
+    csv_rows.append(header_row)
     
     # Add instruction row
-    csv_rows.append([
-        'INSTRUCTIONS: Rate each role from 1 (Easy) to 5 (Very Hard). Only rate roles you are qualified for.',
-        'Leave difficulty_rating_1_to_5 empty for roles you cannot/will not rate.',
-        'Valid ratings: 1=Easy/Regular, 2=Light, 3=Moderate, 4=Hard, 5=Very Hard',
-        'Optional: Add comments about why you gave this rating',
-        'This shows current system difficulty (for reference only)',
-        'This shows if you are qualified for this role'
-    ])
+    instruction_row = ['INSTRUCTIONS: Rate 1-5 (1=Easy, 5=Very Hard). Leave empty if not qualified or don\'t want to rate.'] + [''] * len(job_roles)
+    csv_rows.append(instruction_row)
     
-    # Add empty row for readability
-    csv_rows.append(['', '', '', '', '', ''])
+    # Add current difficulty reference row
+    current_diff_row = ['Current System Difficulty'] + [f"{role.difficulty_multiplier:.1f}" for role in job_roles]
+    csv_rows.append(current_diff_row)
     
+    # Add qualification reference row 
+    qualified_workers_per_role = []
+    for role in job_roles:
+        qualified_count = sum(1 for worker in all_workers if role in worker.qualified_roles)
+        qualified_workers_per_role.append(f"{qualified_count} qualified")
+    
+    qualification_row = ['Workers Qualified'] + qualified_workers_per_role
+    csv_rows.append(qualification_row)
+    
+    # Add empty separator row
+    csv_rows.append([''] * len(header_row))
+    
+    # Add data rows: one row per worker
     for worker in all_workers:
+        worker_row = [worker.name]
+        
         for role in job_roles:
             is_qualified = role in worker.qualified_roles
-            
-            # Include all combinations but mark qualification status
-            csv_rows.append([
-                worker.name,
-                role.name,
-                '' if not is_qualified else '',  # Empty rating for unqualified roles
-                '',  # Empty comments
-                f"{role.difficulty_multiplier:.1f}",  # Current difficulty for reference
-                'YES' if is_qualified else 'NO'
-            ])
+            # Pre-fill with empty string - workers will fill in ratings
+            # Add a hint in the cell if not qualified
+            if is_qualified:
+                worker_row.append('')  # Empty for qualified workers to fill
+            else:
+                worker_row.append('N/A')  # Mark as N/A for unqualified workers
+        
+        csv_rows.append(worker_row)
     
     # Create CSV content
     output = io.StringIO()
@@ -2157,15 +2154,15 @@ def export_rating_template(period_id):
     # Create response
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
-    response.headers['Content-Disposition'] = f'attachment; filename=difficulty_rating_template_{period.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.csv'
+    response.headers['Content-Disposition'] = f'attachment; filename=difficulty_matrix_{period.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.csv'
     
-    flash(f"Rating template exported with {len(csv_rows)-3} worker-role combinations. Share this with your workers to collect difficulty ratings.", "success")
+    flash(f"Matrix format rating template exported with {len(all_workers)} workers and {len(job_roles)} job roles. Each worker gets one row to fill.", "success")
     return response
 
 
 @main_bp.route('/period/<int:period_id>/import_ratings', methods=['GET', 'POST'])
 def import_worker_ratings(period_id):
-    """Import worker difficulty ratings from CSV and update job role difficulties"""
+    """Import worker difficulty ratings from matrix format CSV"""
     period = SchedulingPeriod.query.get_or_404(period_id)
     
     if request.method == 'GET':
@@ -2191,18 +2188,25 @@ def import_worker_ratings(period_id):
         csv_content = file.read().decode('utf-8')
         csv_lines = csv_content.strip().split('\n')
         
-        if len(csv_lines) < 4:  # Header + instruction + empty + at least 1 data row
-            flash('CSV file appears to be empty or invalid.', 'danger')
+        if len(csv_lines) < 6:  # Header + instruction + current diff + qualified + empty + at least 1 worker
+            flash('CSV file appears to be empty or invalid. Please use the exported matrix template.', 'danger')
             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
         
         # Parse CSV
-        reader = csv.DictReader(io.StringIO(csv_content))
+        reader = csv.reader(io.StringIO(csv_content))
+        rows = list(reader)
         
-        # Validate headers
-        expected_headers = ['worker_name', 'job_role_name', 'difficulty_rating_1_to_5', 'comments', 'current_difficulty', 'qualified']
-        if not all(header in reader.fieldnames for header in expected_headers[:3]):  # Only require first 3
-            flash('CSV file is missing required columns. Please use the exported template.', 'danger')
+        # Extract header row (job role names)
+        header_row = rows[0]
+        if len(header_row) < 2 or header_row[0] != 'Worker Name':
+            flash('Invalid CSV format. Please use the exported matrix template.', 'danger')
             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+        job_role_names = header_row[1:]  # Skip "Worker Name" column
+        
+        # Find where the actual data starts (skip instruction rows)
+        data_start_row = 5  # Skip header + instruction + current diff + qualified + empty
+        worker_rows = rows[data_start_row:]
         
         # Process ratings
         ratings_by_role = defaultdict(list)  # role_name -> list of ratings
@@ -2210,40 +2214,51 @@ def import_worker_ratings(period_id):
         skipped_count = 0
         error_count = 0
         
-        for row_num, row in enumerate(reader, start=1):
-            # Skip instruction and empty rows
-            worker_name = row.get('worker_name', '').strip()
-            role_name = row.get('job_role_name', '').strip()
-            rating_str = row.get('difficulty_rating_1_to_5', '').strip()
-            
-            if not worker_name or not role_name or worker_name.startswith('INSTRUCTIONS'):
+        for row_num, row in enumerate(worker_rows, start=data_start_row + 1):
+            if len(row) < 2:  # Skip empty rows
+                continue
+                
+            worker_name = row[0].strip()
+            if not worker_name or worker_name.startswith('INSTRUCTIONS'):
                 continue
             
-            if not rating_str:
-                skipped_count += 1
-                continue
-            
-            try:
-                rating = float(rating_str)
-                if rating < 1 or rating > 5:
-                    current_app.logger.warning(f"Row {row_num}: Invalid rating {rating} for {worker_name}-{role_name}")
-                    error_count += 1
+            # Process each role rating for this worker
+            for col_idx, role_name in enumerate(job_role_names):
+                if col_idx + 1 >= len(row):  # Skip if not enough columns
+                    continue
+                    
+                rating_str = row[col_idx + 1].strip()
+                
+                # Skip empty, N/A, or non-numeric ratings
+                if not rating_str or rating_str.upper() in ['N/A', 'NA', '']:
+                    skipped_count += 1
                     continue
                 
-                ratings_by_role[role_name].append({
-                    'worker': worker_name,
-                    'rating': rating,
-                    'comments': row.get('comments', '').strip()
-                })
-                processed_count += 1
-                
-            except ValueError:
-                current_app.logger.warning(f"Row {row_num}: Invalid rating value '{rating_str}' for {worker_name}-{role_name}")
-                error_count += 1
-                continue
+                try:
+                    rating = float(rating_str)
+                    
+                    # Normalize and convert to integer
+                    if rating < 1:
+                        rating = 1
+                    elif rating > 5:
+                        rating = 5
+                    
+                    rating = int(round(rating))  # Convert to integer
+                    
+                    ratings_by_role[role_name].append({
+                        'worker': worker_name,
+                        'rating': rating,
+                        'comments': f"Matrix import from {worker_name}"
+                    })
+                    processed_count += 1
+                    
+                except ValueError:
+                    current_app.logger.warning(f"Row {row_num}: Invalid rating '{rating_str}' for {worker_name}-{role_name}")
+                    error_count += 1
+                    continue
         
         if not ratings_by_role:
-            flash('No valid ratings found in the uploaded file.', 'warning')
+            flash('No valid ratings found in the uploaded matrix. Please check the format and try again.', 'warning')
             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
         
         # Calculate average ratings and update job roles
@@ -2266,7 +2281,7 @@ def import_worker_ratings(period_id):
             avg_rating = sum(rating_values) / len(rating_values)
             old_difficulty = role.difficulty_multiplier
             
-            # Update role difficulty
+            # Update role difficulty (round to 2 decimal places)
             role.difficulty_multiplier = round(avg_rating, 2)
             updated_roles.append(role)
             
@@ -2282,10 +2297,10 @@ def import_worker_ratings(period_id):
         db.session.commit()
         
         # Create success message with details
-        flash(f"Successfully imported ratings! Updated {len(updated_roles)} job roles based on {processed_count} worker ratings.", "success")
+        flash(f"Successfully imported matrix ratings! Updated {len(updated_roles)} job roles based on {processed_count} worker ratings.", "success")
         
         if skipped_count > 0:
-            flash(f"Skipped {skipped_count} empty ratings (workers who didn't rate certain roles).", "info")
+            flash(f"Skipped {skipped_count} empty/N/A ratings (workers who didn't rate certain roles).", "info")
         
         if error_count > 0:
             flash(f"Found {error_count} invalid ratings that were ignored.", "warning")
@@ -2298,12 +2313,14 @@ def import_worker_ratings(period_id):
             'error_count': error_count
         }
         
-        return redirect(url_for('main.show_import_results', period_id=period_id))
+        # return redirect(url_for('main.show_import_results', period_id=period_id))
+        return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
         
     except Exception as e:
-        current_app.logger.error(f"Error importing ratings: {e}")
-        flash(f"Error processing file: {e}", "danger")
+        current_app.logger.error(f"Error importing matrix ratings: {e}")
+        flash(f"Error processing matrix file: {e}", "danger")
         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+
 
 
 @main_bp.route('/period/<int:period_id>/import_results')
