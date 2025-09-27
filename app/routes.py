@@ -2160,9 +2160,176 @@ def export_rating_template(period_id):
     return response
 
 
+# @main_bp.route('/period/<int:period_id>/import_ratings', methods=['GET', 'POST'])
+# def import_worker_ratings(period_id):
+#     """Import worker difficulty ratings from matrix format CSV"""
+#     period = SchedulingPeriod.query.get_or_404(period_id)
+    
+#     if request.method == 'GET':
+#         # Show import form
+#         return render_template('import_ratings.html', period=period)
+    
+#     # Handle POST request with file upload
+#     if 'rating_file' not in request.files:
+#         flash('No file selected for upload.', 'danger')
+#         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+    
+#     file = request.files['rating_file']
+#     if file.filename == '':
+#         flash('No file selected for upload.', 'danger')
+#         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+    
+#     if not file.filename.lower().endswith('.csv'):
+#         flash('Please upload a CSV file.', 'danger')
+#         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+    
+#     try:
+#         # Read CSV content
+#         csv_content = file.read().decode('utf-8')
+#         csv_lines = csv_content.strip().split('\n')
+        
+#         if len(csv_lines) < 6:  # Header + instruction + current diff + qualified + empty + at least 1 worker
+#             flash('CSV file appears to be empty or invalid. Please use the exported matrix template.', 'danger')
+#             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+#         # Parse CSV
+#         reader = csv.reader(io.StringIO(csv_content))
+#         rows = list(reader)
+        
+#         # Extract header row (job role names)
+#         header_row = rows[0]
+#         if len(header_row) < 2 or header_row[0] != 'Worker Name':
+#             flash('Invalid CSV format. Please use the exported matrix template.', 'danger')
+#             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+#         job_role_names = header_row[1:]  # Skip "Worker Name" column
+        
+#         # Find where the actual data starts (skip instruction rows)
+#         data_start_row = 5  # Skip header + instruction + current diff + qualified + empty
+#         worker_rows = rows[data_start_row:]
+        
+#         # Process ratings
+#         ratings_by_role = defaultdict(list)  # role_name -> list of ratings
+#         processed_count = 0
+#         skipped_count = 0
+#         error_count = 0
+        
+#         for row_num, row in enumerate(worker_rows, start=data_start_row + 1):
+#             if len(row) < 2:  # Skip empty rows
+#                 continue
+                
+#             worker_name = row[0].strip()
+#             if not worker_name or worker_name.startswith('INSTRUCTIONS'):
+#                 continue
+            
+#             # Process each role rating for this worker
+#             for col_idx, role_name in enumerate(job_role_names):
+#                 if col_idx + 1 >= len(row):  # Skip if not enough columns
+#                     continue
+                    
+#                 rating_str = row[col_idx + 1].strip()
+                
+#                 # Skip empty, N/A, or non-numeric ratings
+#                 if not rating_str or rating_str.upper() in ['N/A', 'NA', '']:
+#                     skipped_count += 1
+#                     continue
+                
+#                 try:
+#                     rating = float(rating_str)
+                    
+#                     # Normalize and convert to integer
+#                     if rating < 1:
+#                         rating = 1
+#                     elif rating > 5:
+#                         rating = 5
+                    
+#                     rating = int(round(rating))  # Convert to integer
+                    
+#                     ratings_by_role[role_name].append({
+#                         'worker': worker_name,
+#                         'rating': rating,
+#                         'comments': f"Matrix import from {worker_name}"
+#                     })
+#                     processed_count += 1
+                    
+#                 except ValueError:
+#                     current_app.logger.warning(f"Row {row_num}: Invalid rating '{rating_str}' for {worker_name}-{role_name}")
+#                     error_count += 1
+#                     continue
+        
+#         if not ratings_by_role:
+#             flash('No valid ratings found in the uploaded matrix. Please check the format and try again.', 'warning')
+#             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+#         # Calculate average ratings and update job roles
+#         updated_roles = []
+#         role_stats = {}
+        
+#         for role_name, ratings_list in ratings_by_role.items():
+#             # Find the corresponding job role
+#             role = JobRole.query.filter_by(
+#                 scheduling_period_id=period_id, 
+#                 name=role_name
+#             ).first()
+            
+#             if not role:
+#                 current_app.logger.warning(f"Role '{role_name}' not found in period {period.name}")
+#                 continue
+            
+#             # Calculate average rating
+#             rating_values = [r['rating'] for r in ratings_list]
+#             avg_rating = sum(rating_values) / len(rating_values)
+#             old_difficulty = role.difficulty_multiplier
+            
+#             # Update role difficulty (round to 2 decimal places)
+#             role.difficulty_multiplier = round(avg_rating, 2)
+#             updated_roles.append(role)
+            
+#             role_stats[role_name] = {
+#                 'old_difficulty': old_difficulty,
+#                 'new_difficulty': role.difficulty_multiplier,
+#                 'num_ratings': len(rating_values),
+#                 'ratings': rating_values,
+#                 'avg_rating': avg_rating
+#             }
+        
+#         # Commit changes
+#         db.session.commit()
+        
+#         # Create success message with details
+#         flash(f"Successfully imported matrix ratings! Updated {len(updated_roles)} job roles based on {processed_count} worker ratings.", "success")
+        
+#         if skipped_count > 0:
+#             flash(f"Skipped {skipped_count} empty/N/A ratings (workers who didn't rate certain roles).", "info")
+        
+#         if error_count > 0:
+#             flash(f"Found {error_count} invalid ratings that were ignored.", "warning")
+        
+#         # Store detailed results in session for display
+#         session['import_results'] = {
+#             'role_stats': role_stats,
+#             'processed_count': processed_count,
+#             'skipped_count': skipped_count,
+#             'error_count': error_count
+#         }
+        
+#         # return redirect(url_for('main.show_import_results', period_id=period_id))
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+        
+#     except Exception as e:
+#         current_app.logger.error(f"Error importing matrix ratings: {e}")
+#         flash(f"Error processing matrix file: {e}", "danger")
+#         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+
+
+
+
+
+
+############## Integrating extreme rating pattern detection ##############
 @main_bp.route('/period/<int:period_id>/import_ratings', methods=['GET', 'POST'])
 def import_worker_ratings(period_id):
-    """Import worker difficulty ratings from matrix format CSV"""
+    """Import worker difficulty ratings from matrix format CSV with extreme rating protection"""
     period = SchedulingPeriod.query.get_or_404(period_id)
     
     if request.method == 'GET':
@@ -2261,11 +2428,22 @@ def import_worker_ratings(period_id):
             flash('No valid ratings found in the uploaded matrix. Please check the format and try again.', 'warning')
             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
         
+        # ENHANCED: Detect and handle extreme rating patterns
+        pattern_warnings, cleaned_ratings, normalized_ratings = detect_extreme_rating_patterns(ratings_by_role, period_id)
+        distribution_warnings = analyze_role_distribution(cleaned_ratings if cleaned_ratings else ratings_by_role)
+        
+        # Use Strategy 1: Remove extreme workers entirely (recommended approach)
+        final_ratings = cleaned_ratings if cleaned_ratings else ratings_by_role
+        
+        # Combine all warnings
+        all_warnings = pattern_warnings + distribution_warnings
+        
         # Calculate average ratings and update job roles
         updated_roles = []
         role_stats = {}
+        removed_roles = []
         
-        for role_name, ratings_list in ratings_by_role.items():
+        for role_name, ratings_list in final_ratings.items():
             # Find the corresponding job role
             role = JobRole.query.filter_by(
                 scheduling_period_id=period_id, 
@@ -2274,6 +2452,11 @@ def import_worker_ratings(period_id):
             
             if not role:
                 current_app.logger.warning(f"Role '{role_name}' not found in period {period.name}")
+                continue
+            
+            if not ratings_list:  # No valid ratings after cleaning
+                current_app.logger.warning(f"No valid ratings for role '{role_name}' after cleaning")
+                removed_roles.append(role_name)
                 continue
             
             # Calculate average rating
@@ -2290,8 +2473,14 @@ def import_worker_ratings(period_id):
                 'new_difficulty': role.difficulty_multiplier,
                 'num_ratings': len(rating_values),
                 'ratings': rating_values,
-                'avg_rating': avg_rating
+                'avg_rating': avg_rating,
+                'cleaned': len(ratings_list) != len(ratings_by_role.get(role_name, []))
             }
+        
+        # Handle roles that lost all ratings due to cleaning
+        for role_name in removed_roles:
+            if role_name in ratings_by_role:  # Had ratings before cleaning
+                all_warnings.append(f"Role '{role_name}' lost all ratings after removing extreme patterns - keeping original difficulty")
         
         # Commit changes
         db.session.commit()
@@ -2305,21 +2494,119 @@ def import_worker_ratings(period_id):
         if error_count > 0:
             flash(f"Found {error_count} invalid ratings that were ignored.", "warning")
         
+        # Show pattern detection warnings
+        for warning in all_warnings:
+            flash(warning, "warning")
+        
         # Store detailed results in session for display
         session['import_results'] = {
             'role_stats': role_stats,
             'processed_count': processed_count,
             'skipped_count': skipped_count,
-            'error_count': error_count
+            'error_count': error_count,
+            'pattern_warnings': pattern_warnings,
+            'distribution_warnings': distribution_warnings,
+            'extreme_workers_detected': len(pattern_warnings) > 0
         }
         
-        # return redirect(url_for('main.show_import_results', period_id=period_id))
-        return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+        return redirect(url_for('main.show_import_results', period_id=period_id))
         
     except Exception as e:
         current_app.logger.error(f"Error importing matrix ratings: {e}")
         flash(f"Error processing matrix file: {e}", "danger")
         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+
+
+# Helper functions - add these to your routes.py file as well:
+
+def detect_extreme_rating_patterns(ratings_by_role, period_id):
+    """
+    Detect and handle extreme rating patterns that could game the system
+    Returns: warnings, normalized_ratings_by_role
+    """
+    warnings = []
+    normalized_ratings = {}
+    
+    # Analyze individual worker rating patterns
+    worker_ratings = defaultdict(list)  # worker -> [all their ratings]
+    
+    # Collect all ratings by worker
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_ratings[rating_data['worker']].append(rating_data['rating'])
+    
+    # Detect extreme patterns
+    extreme_workers = []
+    for worker_name, worker_rating_list in worker_ratings.items():
+        if len(worker_rating_list) < 2:  # Need at least 2 ratings to analyze
+            continue
+            
+        rating_variance = statistics.variance(worker_rating_list) if len(worker_rating_list) > 1 else 0
+        rating_mean = statistics.mean(worker_rating_list)
+        
+        # Pattern 1: All ratings the same (variance = 0)
+        if rating_variance == 0:
+            if rating_mean <= 1.5:
+                warnings.append(f"{worker_name} rated ALL roles as {int(rating_mean)} (too easy) - ratings removed to prevent overwork")
+                extreme_workers.append((worker_name, 'all_easy'))
+            elif rating_mean >= 4.5:
+                warnings.append(f"{worker_name} rated ALL roles as {int(rating_mean)} (too hard) - ratings removed to prevent gaming")
+                extreme_workers.append((worker_name, 'all_hard'))
+        
+        # Pattern 2: Very low variance (almost all the same)
+        elif rating_variance < 0.3 and len(worker_rating_list) >= 3:
+            warnings.append(f"{worker_name} gave very similar ratings (variance: {rating_variance:.2f}) - may indicate unrealistic assessment")
+            extreme_workers.append((worker_name, 'low_variance'))
+    
+    # Remove extreme ratings entirely
+    cleaned_ratings = {}
+    for role_name, ratings_list in ratings_by_role.items():
+        cleaned_list = []
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            # Skip ratings from workers with extreme patterns
+            if not any(worker_name == extreme[0] for extreme in extreme_workers):
+                cleaned_list.append(rating_data)
+        
+        if cleaned_list:  # Only include roles that have valid ratings left
+            cleaned_ratings[role_name] = cleaned_list
+    
+    return warnings, cleaned_ratings, normalized_ratings
+
+
+def analyze_role_distribution(ratings_by_role):
+    """Check if roles have meaningful difficulty differences"""
+    if len(ratings_by_role) < 2:
+        return []
+    
+    warnings = []
+    role_averages = {}
+    
+    # Calculate average for each role
+    for role_name, ratings_list in ratings_by_role.items():
+        if ratings_list:
+            avg = sum(r['rating'] for r in ratings_list) / len(ratings_list)
+            role_averages[role_name] = avg
+    
+    if len(role_averages) < 2:
+        return warnings
+    
+    # Check if all roles have similar difficulty
+    avg_values = list(role_averages.values())
+    difficulty_variance = statistics.variance(avg_values)
+    
+    if difficulty_variance < 0.5:  # Very low variance between roles
+        warnings.append(f"All roles have similar difficulty ratings (variance: {difficulty_variance:.2f}) - difficulty weighting may not be very effective")
+    
+    # List roles by difficulty for reference
+    sorted_roles = sorted(role_averages.items(), key=lambda x: x[1])
+    if len(sorted_roles) >= 3:
+        easiest = sorted_roles[0]
+        hardest = sorted_roles[-1]
+        warnings.append(f"Easiest role: {easiest[0]} ({easiest[1]:.1f}), Hardest role: {hardest[0]} ({hardest[1]:.1f})")
+    
+    return warnings
+
 
 
 
@@ -2356,3 +2643,208 @@ def reset_difficulties(period_id):
     
     flash(f"Reset difficulty ratings for {len(job_roles)} job roles to neutral (1.0).", "success")
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+
+
+
+
+
+
+
+
+
+
+
+
+##################### Handling rating scenarios ###########################
+
+import statistics
+
+
+def detect_extreme_rating_patterns(ratings_by_role, period_id):
+    """
+    Detect and handle extreme rating patterns that could game the system
+    Returns: warnings, normalized_ratings_by_role
+    """
+    warnings = []
+    normalized_ratings = {}
+    
+    # Analyze individual worker rating patterns
+    worker_ratings = defaultdict(list)  # worker -> [all their ratings]
+    
+    # Collect all ratings by worker
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_ratings[rating_data['worker']].append(rating_data['rating'])
+    
+    # Detect extreme patterns
+    extreme_workers = []
+    for worker_name, worker_rating_list in worker_ratings.items():
+        if len(worker_rating_list) < 2:  # Need at least 2 ratings to analyze
+            continue
+            
+        rating_variance = statistics.variance(worker_rating_list) if len(worker_rating_list) > 1 else 0
+        rating_mean = statistics.mean(worker_rating_list)
+        
+        # Pattern 1: All ratings the same (variance = 0)
+        if rating_variance == 0:
+            if rating_mean <= 1.5:
+                warnings.append(f"⚠️ {worker_name} rated ALL roles as {int(rating_mean)} (too easy) - this may cause overwork")
+                extreme_workers.append((worker_name, 'all_easy'))
+            elif rating_mean >= 4.5:
+                warnings.append(f"⚠️ {worker_name} rated ALL roles as {int(rating_mean)} (too hard) - this may avoid work")
+                extreme_workers.append((worker_name, 'all_hard'))
+        
+        # Pattern 2: Very low variance (almost all the same)
+        elif rating_variance < 0.3:
+            warnings.append(f"⚠️ {worker_name} gave very similar ratings (variance: {rating_variance:.2f}) - may indicate gaming")
+            extreme_workers.append((worker_name, 'low_variance'))
+    
+    # Option 1: Remove extreme ratings entirely
+    cleaned_ratings = {}
+    for role_name, ratings_list in ratings_by_role.items():
+        cleaned_list = []
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            # Skip ratings from workers with extreme patterns
+            if not any(worker_name == extreme[0] for extreme in extreme_workers):
+                cleaned_list.append(rating_data)
+        
+        if cleaned_list:  # Only include roles that have valid ratings left
+            cleaned_ratings[role_name] = cleaned_list
+        else:
+            # If no valid ratings left, warn and use default
+            warnings.append(f"⚠️ Role '{role_name}' has no valid ratings after removing extreme patterns - using default 1.0")
+    
+    # Option 2: Normalize ratings within each worker to force distribution
+    normalized_ratings = apply_worker_normalization(ratings_by_role, extreme_workers)
+    
+    return warnings, cleaned_ratings, normalized_ratings
+
+
+def apply_worker_normalization(ratings_by_role, extreme_workers):
+    """
+    Force each worker's ratings to have proper distribution (not all the same)
+    """
+    # Collect all ratings by worker first
+    worker_all_ratings = defaultdict(dict)  # worker -> {role: rating}
+    
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            worker_all_ratings[worker_name][role_name] = rating_data['rating']
+    
+    # Normalize extreme workers
+    normalized_ratings_by_role = defaultdict(list)
+    
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            original_rating = rating_data['rating']
+            
+            # Check if this worker has extreme patterns
+            is_extreme = any(worker_name == extreme[0] for extreme in extreme_workers)
+            
+            if is_extreme:
+                # Apply forced distribution: convert flat ratings to relative rankings
+                worker_ratings = worker_all_ratings[worker_name]
+                
+                if len(worker_ratings) >= 3:  # Need at least 3 roles to rank
+                    # Convert to percentile-based ratings
+                    sorted_roles = sorted(worker_ratings.items(), key=lambda x: x[1])
+                    percentile_rating = get_percentile_rating(role_name, sorted_roles)
+                    normalized_rating = percentile_rating
+                else:
+                    # Not enough roles to normalize, use default
+                    normalized_rating = 3.0  # Default to moderate
+                
+                normalized_ratings_by_role[role_name].append({
+                    'worker': worker_name,
+                    'rating': normalized_rating,
+                    'comments': f"Normalized from {original_rating} (extreme pattern detected)"
+                })
+            else:
+                # Keep original rating for normal workers
+                normalized_ratings_by_role[role_name].append(rating_data)
+    
+    return dict(normalized_ratings_by_role)
+
+
+def get_percentile_rating(target_role, sorted_roles):
+    """Convert role position in worker's ranking to 1-5 scale"""
+    total_roles = len(sorted_roles)
+    
+    # Find position of target role
+    position = next(i for i, (role, _) in enumerate(sorted_roles) if role == target_role)
+    
+    # Convert position to 1-5 scale
+    percentile = position / (total_roles - 1) if total_roles > 1 else 0.5
+    
+    # Map percentile to rating scale
+    if percentile <= 0.2:
+        return 1  # Bottom 20% = Easy
+    elif percentile <= 0.4:
+        return 2  # Next 20% = Light  
+    elif percentile <= 0.6:
+        return 3  # Middle 20% = Moderate
+    elif percentile <= 0.8:
+        return 4  # Next 20% = Hard
+    else:
+        return 5  # Top 20% = Very Hard
+
+
+def analyze_role_distribution(ratings_by_role):
+    """Check if roles have meaningful difficulty differences"""
+    if len(ratings_by_role) < 2:
+        return []
+    
+    warnings = []
+    role_averages = {}
+    
+    # Calculate average for each role
+    for role_name, ratings_list in ratings_by_role.items():
+        if ratings_list:
+            avg = sum(r['rating'] for r in ratings_list) / len(ratings_list)
+            role_averages[role_name] = avg
+    
+    if len(role_averages) < 2:
+        return warnings
+    
+    # Check if all roles have similar difficulty
+    avg_values = list(role_averages.values())
+    difficulty_variance = statistics.variance(avg_values)
+    
+    if difficulty_variance < 0.5:  # Very low variance between roles
+        warnings.append(f"⚠️ All roles have similar difficulty ratings (variance: {difficulty_variance:.2f}) - difficulty weighting may not be effective")
+    
+    # List roles by difficulty for reference
+    sorted_roles = sorted(role_averages.items(), key=lambda x: x[1])
+    if len(sorted_roles) >= 3:
+        easiest = sorted_roles[0]
+        hardest = sorted_roles[-1]
+        warnings.append(f"ℹ️ Easiest role: {easiest[0]} ({easiest[1]:.1f}), Hardest role: {hardest[0]} ({hardest[1]:.1f})")
+    
+    return warnings
+
+
+# Update your import_worker_ratings function to use these validations:
+
+# Replace the existing processing section with this enhanced version:
+def enhanced_rating_processing(ratings_by_role, period_id):
+    """Enhanced processing with extreme pattern detection"""
+    
+    # Detect extreme patterns
+    pattern_warnings, cleaned_ratings, normalized_ratings = detect_extreme_rating_patterns(ratings_by_role, period_id)
+    
+    # Analyze role distribution
+    distribution_warnings = analyze_role_distribution(cleaned_ratings)
+    
+    # Combine all warnings
+    all_warnings = pattern_warnings + distribution_warnings
+    
+    # Use cleaned ratings (with extreme patterns removed)
+    final_ratings = cleaned_ratings
+    
+    # Alternative: Use normalized ratings (extreme patterns fixed)
+    # final_ratings = normalized_ratings
+    
+    return final_ratings, all_warnings

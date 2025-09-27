@@ -99,10 +99,11 @@
                        class="btn btn-primary btn-lg mr-3">
                         Back to Job Roles
                     </a>
-                    <a href="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}" 
-                       class="btn btn-success btn-lg">
-                        Generate Schedule with New Ratings
-                    </a>
+                    <form method="POST" action="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}" style="display: inline;">
+    <button type="submit" class="btn btn-success btn-lg">
+        Generate Schedule with New Ratings
+    </button>
+</form>
                 </div>
                 
                 <hr>
