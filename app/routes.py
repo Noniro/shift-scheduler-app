@@ -938,17 +938,25 @@ def delete_constraint(constraint_id):
 
 # Assignments and Slot Generation Routes according to the algorithm
 
-###### WITH DEBUGG MODE ########
 
-# Add this import at the top of routes.py (with other imports)
+
+
+
+
+
+
+
+
+
+################ WITH DEBUGG MODE ###################
+
 import random
 
 @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
 def generate_slots_and_assign_action(period_id):
     period = SchedulingPeriod.query.get_or_404(period_id)
     
-    # ============ NEW: HANDLE RANDOM SEED ============
-    # Get random seed from form (optional) or generate one
+    # ============ RANDOM SEED HANDLING ============
     random_seed = request.form.get('random_seed', '').strip()
     if random_seed:
         try:
@@ -965,9 +973,8 @@ def generate_slots_and_assign_action(period_id):
     # Set the seed for reproducible results
     random.seed(random_seed)
     current_app.logger.info(f"Using random seed: {random_seed}")
-    # ============ END RANDOM SEED HANDLING ============
     
-    # === GENERIC DEBUGGING CONFIGURATION ===
+    # === DEBUGGING CONFIGURATION ===
     DEBUG_SLOT_GENERATION = True  # Set to False to disable all debugging
     DEBUG_ROLE_NAMES = []  # Empty list = debug ALL roles, or specify: ["Toran", "Cook", "Guard"]
     DEBUG_MAX_ITERATIONS_TO_SHOW = 10  # Only show first N iterations per role to avoid spam
@@ -986,10 +993,9 @@ def generate_slots_and_assign_action(period_id):
         flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-    # ============ NEW: RANDOMIZE JOB ROLE ORDER ============
+    # ============ RANDOMIZE JOB ROLE ORDER ============
     random.shuffle(job_roles_for_period)
     current_app.logger.info(f"Randomized processing order for {len(job_roles_for_period)} job roles")
-    # ============ END ROLE RANDOMIZATION ============
 
     total_new_slots_generated = 0
     generated_slot_objects = []
@@ -1014,7 +1020,7 @@ def generate_slots_and_assign_action(period_id):
                 print(f"  - Is overnight: {role.is_overnight_shift}")
             print(f"  - Period: {period.period_start_datetime} to {period.period_end_datetime}")
             print(f"  - Difficulty multiplier: {role.difficulty_multiplier}")
-            print(f"  - Random seed: {random_seed}")  # NEW: Show seed in debug
+            print(f"  - Random seed: {random_seed}")
             print("-" * 60)
         
         role_slots_generated_this_role = 0
@@ -1026,9 +1032,11 @@ def generate_slots_and_assign_action(period_id):
             flash(f"Job Role '{role.name}' has zero/negative shift duration and was skipped for slot generation.", "warning")
             continue
             
-        max_iter = 5000
+        # SAFETY: Prevent infinite loops, but allow legitimate high iteration counts
+        max_iter = 5000  
         iter_count = 0
         iterations_shown = 0
+        consecutive_invalid_slots = 0  # Track consecutive failures to detect infinite loops
         
         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
             iter_count += 1
@@ -1054,35 +1062,12 @@ def generate_slots_and_assign_action(period_id):
                     if show_this_iteration:
                         print(f"  SKIPPING: Time not within restrictions")
                     
-                    # Move to next valid time slot
-                    if role.is_overnight_shift:
-                        # For overnight shifts, find next start time
-                        next_start = current_dt_for_role.replace(
-                            hour=role.work_start_time.hour, 
-                            minute=role.work_start_time.minute, 
-                            second=0, 
-                            microsecond=0
-                        )
-                        if next_start <= current_dt_for_role:
-                            next_start += timedelta(days=1)
-                        current_dt_for_role = next_start
-                        
-                        if show_this_iteration:
-                            print(f"  Overnight: Moving to next start time: {current_dt_for_role}")
-                    else:
-                        # For day shifts, find next start time
-                        next_start = current_dt_for_role.replace(
-                            hour=role.work_start_time.hour, 
-                            minute=role.work_start_time.minute, 
-                            second=0, 
-                            microsecond=0
-                        )
-                        if next_start <= current_dt_for_role:
-                            next_start += timedelta(days=1)
-                        current_dt_for_role = next_start
-                        
-                        if show_this_iteration:
-                            print(f"  Day shift: Moving to next start time: {current_dt_for_role}")
+                    # FIXED: Move to next valid time slot properly
+                    current_dt_for_role = get_next_valid_start_time(current_dt_for_role, role, period.period_end_datetime)
+                    consecutive_invalid_slots = 0  # Reset counter
+                    
+                    if show_this_iteration:
+                        print(f"  Moved to next valid time: {current_dt_for_role}")
                     continue
             
             slot_start = current_dt_for_role
@@ -1092,35 +1077,12 @@ def generate_slots_and_assign_action(period_id):
                 print(f"  Valid time - creating slot: {slot_start} to {slot_end}")
             
             # For time-restricted roles, ensure slot doesn't exceed working hours
+            original_slot_end = slot_end
             if role.has_time_restrictions():
-                original_slot_end = slot_end
+                slot_end = constrain_slot_to_working_hours(slot_start, slot_end, role)
                 
-                if role.is_overnight_shift:
-                    # For overnight shifts, check if slot end goes beyond end time (next day)
-                    next_day_end = (slot_start.replace(
-                        hour=role.work_end_time.hour, 
-                        minute=role.work_end_time.minute, 
-                        second=0, 
-                        microsecond=0
-                    ) + timedelta(days=1))
-                    
-                    if slot_end > next_day_end:
-                        slot_end = next_day_end
-                        if show_this_iteration:
-                            print(f"  Overnight: Adjusted end from {original_slot_end} to {slot_end}")
-                else:
-                    # For day shifts, check if slot end goes beyond end time (same day)
-                    same_day_end = slot_start.replace(
-                        hour=role.work_end_time.hour, 
-                        minute=role.work_end_time.minute, 
-                        second=0, 
-                        microsecond=0
-                    )
-                    
-                    if slot_end > same_day_end:
-                        slot_end = same_day_end
-                        if show_this_iteration:
-                            print(f"  Day shift: Adjusted end from {original_slot_end} to {slot_end}")
+                if show_this_iteration and slot_end != original_slot_end:
+                    print(f"  Time constraint: Adjusted end from {original_slot_end} to {slot_end}")
             
             # Ensure slot doesn't exceed period end
             if slot_end > period.period_end_datetime:
@@ -1130,6 +1092,7 @@ def generate_slots_and_assign_action(period_id):
                     print(f"  Period limit: Adjusted end from {original_slot_end} to {slot_end}")
             
             if slot_start < slot_end:
+                # Valid slot - create it
                 if show_this_iteration:
                     print(f"  CREATING {role.number_needed} slots from {slot_start} to {slot_end}")
                 
@@ -1150,18 +1113,47 @@ def generate_slots_and_assign_action(period_id):
                         
                 if show_this_iteration:
                     iterations_shown += 1
+                
+                # FIXED: Always advance by the ORIGINAL duration, not the constrained slot_end
+                current_dt_for_role = slot_start + duration
+                consecutive_invalid_slots = 0  # Reset counter
+                
             else:
+                # Invalid slot - need to advance time properly
+                consecutive_invalid_slots += 1
+                
                 if show_this_iteration:
                     print(f"  INVALID SLOT: start >= end ({slot_start} >= {slot_end})")
-            
-            # Move to next slot time - THIS IS THE KEY PART!
-            old_current_dt = current_dt_for_role
-            current_dt_for_role = slot_end
+                
+                # FIXED: Handle infinite loop prevention
+                if consecutive_invalid_slots >= 10:
+                    if show_this_iteration:
+                        print(f"  BREAKING: Too many consecutive invalid slots, moving to next day")
+                    
+                    # Force advance to next day at start of working hours
+                    if role.has_time_restrictions():
+                        next_day = current_dt_for_role.replace(
+                            hour=role.work_start_time.hour,
+                            minute=role.work_start_time.minute,
+                            second=0,
+                            microsecond=0
+                        ) + timedelta(days=1)
+                        current_dt_for_role = next_day
+                    else:
+                        # For unrestricted roles, advance by minimum meaningful time
+                        current_dt_for_role += timedelta(hours=1)
+                    
+                    consecutive_invalid_slots = 0
+                    continue
+                
+                # Try smaller advancement
+                if role.has_time_restrictions():
+                    current_dt_for_role = get_next_valid_start_time(current_dt_for_role, role, period.period_end_datetime)
+                else:
+                    current_dt_for_role += timedelta(minutes=30)  # Small advancement
             
             if show_this_iteration:
                 print(f"  Next iteration starts at: {current_dt_for_role}")
-                print(f"  Time jump: {old_current_dt} -> {current_dt_for_role} (+" + 
-                      f"{(current_dt_for_role - old_current_dt).total_seconds()/3600:.1f}h)")
             
             if current_dt_for_role >= period.period_end_datetime:
                 if show_this_iteration:
@@ -1224,10 +1216,9 @@ def generate_slots_and_assign_action(period_id):
         session['assignment_details'] = [("warning", "No workers found in the system to perform assignments.")]
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-    # ============ NEW: RANDOMIZE WORKER ORDER ============
+    # ============ RANDOMIZE WORKER ORDER ============
     random.shuffle(workers)
     current_app.logger.info(f"Randomized worker order for assignment ({len(workers)} workers)")
-    # ============ END WORKER RANDOMIZATION ============
 
     assignments_to_make = []
     for slot_def in generated_slot_objects:
@@ -1251,10 +1242,9 @@ def generate_slots_and_assign_action(period_id):
         .filter(ShiftDefinition.scheduling_period_id == period.id, ScheduledShift.worker_id.is_(None))\
         .all()
     
-    # ============ NEW: RANDOMIZE ASSIGNMENT ORDER ============
+    # ============ RANDOMIZE ASSIGNMENT ORDER ============
     random.shuffle(all_pending_assignments)
     current_app.logger.info(f"Randomized assignment order for {len(all_pending_assignments)} pending assignments")
-    # ============ END ASSIGNMENT RANDOMIZATION ============
     
     current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
     assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
@@ -1286,20 +1276,123 @@ def generate_slots_and_assign_action(period_id):
     if warning_summary_count > 0:
         flash(f"Assignment complete: {warning_summary_count} slots could not be filled. See details below or check server logs.", "warning")
     
-    # ============ NEW: ADD SEED TO SUCCESS/INFO MESSAGES ============
+    # ============ ADD SEED TO SUCCESS/INFO MESSAGES ============
     if assignment_successful and error_count == 0 and warning_summary_count == 0:
         flash(f"All shifts assigned successfully! (Random seed: {random_seed})", "success")
     elif not assignment_successful and error_count == 0 and warning_summary_count == 0:
         flash(f"Shift assignment process completed, but the algorithm reported not all shifts filled (Random seed: {random_seed})", "warning")
     elif total_new_slots_generated > 0 and not all_pending_assignments and (error_count > 0 or warning_summary_count > 0):
         flash(f"Slots were generated, but assignment step encountered issues before processing. (Random seed: {random_seed})", "danger")
-    # ============ END SEED MESSAGES ============
 
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+
+# Helper functions - add these to your routes.py file:
+
+def get_next_valid_start_time(current_time, role, period_end):
+    """Get the next valid start time for a role with time restrictions"""
+    if not role.has_time_restrictions():
+        return current_time + timedelta(minutes=30)  # Default advancement
+    
+    current_time_only = current_time.time()
+    
+    if role.is_overnight_shift:
+        # For overnight shifts (e.g., 22:00 - 06:00)
+        if current_time_only < role.work_start_time:
+            # Before start time today - move to start time today
+            return current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            )
+        else:
+            # After start time - move to start time tomorrow
+            next_start = current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            ) + timedelta(days=1)
+            return min(next_start, period_end)
+    else:
+        # For day shifts (e.g., 08:00 - 22:00)
+        if current_time_only < role.work_start_time:
+            # Before start time today - move to start time today
+            return current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            )
+        elif current_time_only < role.work_end_time:
+            # Within working hours - small advancement
+            return current_time + timedelta(minutes=30)
+        else:
+            # After end time today - move to start time tomorrow
+            next_start = current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            ) + timedelta(days=1)
+            return min(next_start, period_end)
+
+
+def constrain_slot_to_working_hours(slot_start, slot_end, role):
+    """Constrain a slot's end time to role's working hours"""
+    if not role.has_time_restrictions():
+        return slot_end
+    
+    if role.is_overnight_shift:
+        # For overnight shifts, calculate next day end time
+        next_day_end = slot_start.replace(
+            hour=role.work_end_time.hour,
+            minute=role.work_end_time.minute,
+            second=0,
+            microsecond=0
+        ) + timedelta(days=1)
+        return min(slot_end, next_day_end)
+    else:
+        # For day shifts, calculate same day end time
+        same_day_end = slot_start.replace(
+            hour=role.work_end_time.hour,
+            minute=role.work_end_time.minute,
+            second=0,
+            microsecond=0
+        )
+        # If same day end is before slot start, it means we crossed midnight
+        if same_day_end <= slot_start:
+            same_day_end += timedelta(days=1)
+        return min(slot_end, same_day_end)
+
+
+# # Add this import at the top of routes.py (with other imports)
+# import random
 
 # @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
 # def generate_slots_and_assign_action(period_id):
 #     period = SchedulingPeriod.query.get_or_404(period_id)
+    
+#     # ============ NEW: HANDLE RANDOM SEED ============
+#     # Get random seed from form (optional) or generate one
+#     random_seed = request.form.get('random_seed', '').strip()
+#     if random_seed:
+#         try:
+#             random_seed = int(random_seed)
+#             if random_seed < 1 or random_seed > 999999:
+#                 flash("Random seed must be between 1 and 999999. Using auto-generated seed.", "warning")
+#                 random_seed = random.randint(1, 999999)
+#         except ValueError:
+#             flash("Invalid random seed. Using auto-generated seed.", "warning")
+#             random_seed = random.randint(1, 999999)
+#     else:
+#         random_seed = random.randint(1, 999999)
+    
+#     # Set the seed for reproducible results
+#     random.seed(random_seed)
+#     current_app.logger.info(f"Using random seed: {random_seed}")
+#     # ============ END RANDOM SEED HANDLING ============
     
 #     # === GENERIC DEBUGGING CONFIGURATION ===
 #     DEBUG_SLOT_GENERATION = True  # Set to False to disable all debugging
@@ -1319,6 +1412,11 @@ def generate_slots_and_assign_action(period_id):
 #     if not job_roles_for_period:
 #         flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
 #         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     # ============ NEW: RANDOMIZE JOB ROLE ORDER ============
+#     random.shuffle(job_roles_for_period)
+#     current_app.logger.info(f"Randomized processing order for {len(job_roles_for_period)} job roles")
+#     # ============ END ROLE RANDOMIZATION ============
 
 #     total_new_slots_generated = 0
 #     generated_slot_objects = []
@@ -1343,6 +1441,7 @@ def generate_slots_and_assign_action(period_id):
 #                 print(f"  - Is overnight: {role.is_overnight_shift}")
 #             print(f"  - Period: {period.period_start_datetime} to {period.period_end_datetime}")
 #             print(f"  - Difficulty multiplier: {role.difficulty_multiplier}")
+#             print(f"  - Random seed: {random_seed}")  # NEW: Show seed in debug
 #             print("-" * 60)
         
 #         role_slots_generated_this_role = 0
@@ -1380,7 +1479,7 @@ def generate_slots_and_assign_action(period_id):
                 
 #                 if not is_valid_time:
 #                     if show_this_iteration:
-#                         print(f"  ❌ SKIPPING: Time not within restrictions")
+#                         print(f"  SKIPPING: Time not within restrictions")
                     
 #                     # Move to next valid time slot
 #                     if role.is_overnight_shift:
@@ -1396,7 +1495,7 @@ def generate_slots_and_assign_action(period_id):
 #                         current_dt_for_role = next_start
                         
 #                         if show_this_iteration:
-#                             print(f"  ⏭️ Overnight: Moving to next start time: {current_dt_for_role}")
+#                             print(f"  Overnight: Moving to next start time: {current_dt_for_role}")
 #                     else:
 #                         # For day shifts, find next start time
 #                         next_start = current_dt_for_role.replace(
@@ -1410,14 +1509,14 @@ def generate_slots_and_assign_action(period_id):
 #                         current_dt_for_role = next_start
                         
 #                         if show_this_iteration:
-#                             print(f"  ⏭️ Day shift: Moving to next start time: {current_dt_for_role}")
+#                             print(f"  Day shift: Moving to next start time: {current_dt_for_role}")
 #                     continue
             
 #             slot_start = current_dt_for_role
 #             slot_end = current_dt_for_role + duration
             
 #             if show_this_iteration:
-#                 print(f"  ✅ Valid time - creating slot: {slot_start} to {slot_end}")
+#                 print(f"  Valid time - creating slot: {slot_start} to {slot_end}")
             
 #             # For time-restricted roles, ensure slot doesn't exceed working hours
 #             if role.has_time_restrictions():
@@ -1435,7 +1534,7 @@ def generate_slots_and_assign_action(period_id):
 #                     if slot_end > next_day_end:
 #                         slot_end = next_day_end
 #                         if show_this_iteration:
-#                             print(f"  📏 Overnight: Adjusted end from {original_slot_end} to {slot_end}")
+#                             print(f"  Overnight: Adjusted end from {original_slot_end} to {slot_end}")
 #                 else:
 #                     # For day shifts, check if slot end goes beyond end time (same day)
 #                     same_day_end = slot_start.replace(
@@ -1448,18 +1547,18 @@ def generate_slots_and_assign_action(period_id):
 #                     if slot_end > same_day_end:
 #                         slot_end = same_day_end
 #                         if show_this_iteration:
-#                             print(f"  📏 Day shift: Adjusted end from {original_slot_end} to {slot_end}")
+#                             print(f"  Day shift: Adjusted end from {original_slot_end} to {slot_end}")
             
 #             # Ensure slot doesn't exceed period end
 #             if slot_end > period.period_end_datetime:
 #                 original_slot_end = slot_end
 #                 slot_end = period.period_end_datetime
 #                 if show_this_iteration:
-#                     print(f"  📏 Period limit: Adjusted end from {original_slot_end} to {slot_end}")
+#                     print(f"  Period limit: Adjusted end from {original_slot_end} to {slot_end}")
             
 #             if slot_start < slot_end:
 #                 if show_this_iteration:
-#                     print(f"  🏭 CREATING {role.number_needed} slots from {slot_start} to {slot_end}")
+#                     print(f"  CREATING {role.number_needed} slots from {slot_start} to {slot_end}")
                 
 #                 for i in range(1, role.number_needed + 1):
 #                     new_slot = ShiftDefinition(
@@ -1474,26 +1573,26 @@ def generate_slots_and_assign_action(period_id):
 #                     role_slots_generated_this_role += 1
                     
 #                     if show_this_iteration:
-#                         print(f"    ✅ Created slot #{i}: {new_slot.name}")
+#                         print(f"    Created slot #{i}: {new_slot.name}")
                         
 #                 if show_this_iteration:
 #                     iterations_shown += 1
 #             else:
 #                 if show_this_iteration:
-#                     print(f"  ❌ INVALID SLOT: start >= end ({slot_start} >= {slot_end})")
+#                     print(f"  INVALID SLOT: start >= end ({slot_start} >= {slot_end})")
             
 #             # Move to next slot time - THIS IS THE KEY PART!
 #             old_current_dt = current_dt_for_role
 #             current_dt_for_role = slot_end
             
 #             if show_this_iteration:
-#                 print(f"  ⏩ Next iteration starts at: {current_dt_for_role}")
-#                 print(f"  📊 Time jump: {old_current_dt} → {current_dt_for_role} (+" + 
+#                 print(f"  Next iteration starts at: {current_dt_for_role}")
+#                 print(f"  Time jump: {old_current_dt} -> {current_dt_for_role} (+" + 
 #                       f"{(current_dt_for_role - old_current_dt).total_seconds()/3600:.1f}h)")
             
 #             if current_dt_for_role >= period.period_end_datetime:
 #                 if show_this_iteration:
-#                     print(f"  🏁 STOPPING: Reached period end")
+#                     print(f"  STOPPING: Reached period end")
 #                 break
                 
 #         if iter_count >= max_iter: 
@@ -1503,7 +1602,7 @@ def generate_slots_and_assign_action(period_id):
         
 #         # === FINAL ROLE SUMMARY ===
 #         if should_debug_this_role:
-#             print(f"\n🎯 FINAL SUMMARY FOR {role.name}:")
+#             print(f"\nFINAL SUMMARY FOR {role.name}:")
 #             print(f"  - Total slots generated: {role_slots_generated_this_role}")
 #             print(f"  - Total iterations: {iter_count}")
 #             print(f"  - Slots per day (approx): {role_slots_generated_this_role / max(1, (period.period_end_datetime - period.period_start_datetime).days):.1f}")
@@ -1528,6 +1627,7 @@ def generate_slots_and_assign_action(period_id):
 #         for role in job_roles_for_period:
 #             role_count = sum(1 for slot in generated_slot_objects if slot.job_role_id == role.id)
 #             print(f"  - {role.name}: {role_count} slots")
+#         print(f"Random seed used: {random_seed}")
 #         print("=" * 80)
     
 #     if total_new_slots_generated > 0:
@@ -1544,12 +1644,17 @@ def generate_slots_and_assign_action(period_id):
 #         flash("No new coverage slots were generated. Check role durations. No assignments will be made.", "warning")
 #         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-#     # ... rest of the function remains the same (assignment logic) ...
+#     # --- Step 3: Prepare for and run assignment algorithm ---
 #     workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
 #     if not workers:
 #         flash("No workers found. Slots generated, but assignments cannot proceed.", "warning")
 #         session['assignment_details'] = [("warning", "No workers found in the system to perform assignments.")]
 #         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+#     # ============ NEW: RANDOMIZE WORKER ORDER ============
+#     random.shuffle(workers)
+#     current_app.logger.info(f"Randomized worker order for assignment ({len(workers)} workers)")
+#     # ============ END WORKER RANDOMIZATION ============
 
 #     assignments_to_make = []
 #     for slot_def in generated_slot_objects:
@@ -1573,10 +1678,15 @@ def generate_slots_and_assign_action(period_id):
 #         .filter(ShiftDefinition.scheduling_period_id == period.id, ScheduledShift.worker_id.is_(None))\
 #         .all()
     
+#     # ============ NEW: RANDOMIZE ASSIGNMENT ORDER ============
+#     random.shuffle(all_pending_assignments)
+#     current_app.logger.info(f"Randomized assignment order for {len(all_pending_assignments)} pending assignments")
+#     # ============ END ASSIGNMENT RANDOMIZATION ============
+    
 #     current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
 #     assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
     
-#     # ... rest of assignment handling remains the same ...
+#     # --- Message handling ---
 #     detailed_assignment_warnings = []
 #     error_count = 0
 #     warning_summary_count = 0
@@ -1603,14 +1713,17 @@ def generate_slots_and_assign_action(period_id):
 #     if warning_summary_count > 0:
 #         flash(f"Assignment complete: {warning_summary_count} slots could not be filled. See details below or check server logs.", "warning")
     
+#     # ============ NEW: ADD SEED TO SUCCESS/INFO MESSAGES ============
 #     if assignment_successful and error_count == 0 and warning_summary_count == 0:
-#         flash("All shifts assigned successfully!", "success")
+#         flash(f"All shifts assigned successfully! (Random seed: {random_seed})", "success")
 #     elif not assignment_successful and error_count == 0 and warning_summary_count == 0:
-#         flash("Shift assignment process completed, but the algorithm reported not all shifts filled (no specific warnings).", "warning")
+#         flash(f"Shift assignment process completed, but the algorithm reported not all shifts filled (Random seed: {random_seed})", "warning")
 #     elif total_new_slots_generated > 0 and not all_pending_assignments and (error_count > 0 or warning_summary_count > 0):
-#         flash("Slots were generated, but assignment step encountered issues before processing.", "danger")
+#         flash(f"Slots were generated, but assignment step encountered issues before processing. (Random seed: {random_seed})", "danger")
+#     # ============ END SEED MESSAGES ============
 
 #     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
 
 
 
