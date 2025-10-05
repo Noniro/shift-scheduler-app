@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash, current_app, session, make_response
 from . import db
-from .models import SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift, User
+from .models import SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift, WorkerRoleRating, User
 from datetime import datetime, time, timedelta, date
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy.orm import joinedload, selectinload # For eager loading
@@ -2132,7 +2132,9 @@ def swap_assignments(assignment_id):
     # Adding statistics page to know how many shifts were assigned, unassigned, how did shift at night, etc.
     # Also we want to see from each role how each worker performed, how many shifts were assigned to each worker, etc.
 
-# The statistics route to display fairness and workload distribution
+
+
+# import statistics
 # from collections import defaultdict
 
 # @main_bp.route('/period/<int:period_id>/fairness_statistics')
@@ -2156,21 +2158,34 @@ def swap_assignments(assignment_id):
 
 #     # --- Initialize Statistics Dictionaries ---
 #     stats = {
-#         'total_shifts': len(all_assignments), 'assigned_shifts': 0, 'unassigned_shifts': 0,
-#         'unassigned_shifts_list': [], 'worker_stats': {}, 'role_stats': {}
+#         'total_shifts': len(all_assignments), 
+#         'assigned_shifts': 0, 
+#         'unassigned_shifts': 0,
+#         'unassigned_shifts_list': [], 
+#         'worker_stats': {}, 
+#         'role_stats': {}
 #     }
+    
 #     period_duration_hours = (period.period_end_datetime - period.period_start_datetime).total_seconds() / 3600.0
 
 #     for worker in all_workers:
 #         stats['worker_stats'][worker.id] = {
-#             'name': worker.name, 'total_shifts': 0, 'total_hours': 0.0, 'night_shifts': 0,
-#             'weekend_shifts': 0, 'difficulty_counts': defaultdict(int),
-#             'downtime_hours': period_duration_hours, 'role_distribution': defaultdict(int)
+#             'name': worker.name, 
+#             'total_shifts': 0, 
+#             'total_hours': 0.0, 
+#             'night_shifts': 0,
+#             'weekend_shifts': 0, 
+#             'difficulty_counts': defaultdict(int),
+#             'downtime_hours': period_duration_hours, 
+#             'role_distribution': defaultdict(int)
 #         }
 #     for role in all_roles:
 #         stats['role_stats'][role.id] = {
-#             'name': role.name, 'total_shifts': 0, 'total_hours': 0.0,
-#             'worker_distribution': defaultdict(int), 'unique_workers': 0
+#             'name': role.name, 
+#             'total_shifts': 0, 
+#             'total_hours': 0.0,
+#             'worker_distribution': defaultdict(int), 
+#             'unique_workers': 0
 #         }
 
 #     # --- Process All Assignments ---
@@ -2179,7 +2194,8 @@ def swap_assignments(assignment_id):
 
 #     for assignment in all_assignments:
 #         slot = assignment.defined_slot
-#         if not slot or not slot.job_role: continue
+#         if not slot or not slot.job_role: 
+#             continue
 #         role = slot.job_role
 #         stats['role_stats'][role.id]['total_shifts'] += 1
 #         stats['role_stats'][role.id]['total_hours'] += slot.duration_total_seconds / 3600.0
@@ -2218,7 +2234,8 @@ def swap_assignments(assignment_id):
 #     insights = []
 #     if stats['assigned_shifts'] > 0:
 #         active_workers = [w for w in stats['worker_stats'].values() if w['total_shifts'] > 0]
-#         if not active_workers: active_workers = stats['worker_stats'].values()
+#         if not active_workers: 
+#             active_workers = stats['worker_stats'].values()
         
 #         avg_hours = sum(w['total_hours'] for w in active_workers) / len(active_workers)
 #         avg_night = sum(w['night_shifts'] for w in active_workers) / len(active_workers)
@@ -2238,23 +2255,58 @@ def swap_assignments(assignment_id):
 #     if stats['unassigned_shifts'] > 0:
 #         insights.append(f"There are <b>{stats['unassigned_shifts']} unassigned shifts</b> that need coverage.")
 
-#     return render_template('fairness_statistics.html', period=period, stats=stats, insights=insights)
+#     # **NEW: Calculate algorithmic fairness metrics**
+#     fairness_metrics = calculate_fairness_metrics(period_id)
+    
+#     # Calculate overall fairness summary
+#     fairness_summary = None
+#     if fairness_metrics:
+#         workers_with_assignments = [w for w in all_workers if w.id in fairness_metrics and fairness_metrics[w.id]['my_weighted_hours'] > 0]
+#         total_workers = len(workers_with_assignments)
+        
+#         if total_workers > 0:
+#             proportional_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_proportional'])
+#             envy_free_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_envy_free'])
+#             ef1_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_ef1'])
+            
+#             fairness_summary = {
+#                 'total_workers': total_workers,
+#                 'proportional_count': proportional_count,
+#                 'envy_free_count': envy_free_count,
+#                 'ef1_count': ef1_count,
+#                 'proportional_percentage': (proportional_count / total_workers * 100) if total_workers > 0 else 0,
+#                 'envy_free_percentage': (envy_free_count / total_workers * 100) if total_workers > 0 else 0,
+#                 'ef1_percentage': (ef1_count / total_workers * 100) if total_workers > 0 else 0,
+#                 'is_fully_proportional': proportional_count == total_workers,
+#                 'is_fully_envy_free': envy_free_count == total_workers,
+#                 'is_fully_ef1': ef1_count == total_workers
+#             }
+            
+#             # Add fairness insights
+#             if fairness_summary['is_fully_envy_free']:
+#                 insights.append("<b>🎉 Perfect Fairness:</b> The allocation is envy-free! Every worker prefers their own assignment.")
+#             elif fairness_summary['is_fully_ef1']:
+#                 insights.append(f"<b>✅ Near-Perfect Fairness:</b> The allocation is EF1 (envy-free up to 1 item). All {total_workers} workers have minimal envy.")
+#             elif fairness_summary['is_fully_proportional']:
+#                 insights.append(f"<b>✓ Proportional:</b> All {total_workers} workers received at least their fair share (1/n of total).")
+#             else:
+#                 non_proportional = total_workers - proportional_count
+#                 if non_proportional > 0:
+#                     insights.append(f"<b>⚠️ Fairness Warning:</b> {non_proportional} worker(s) received less than their proportional share.")
 
+#     return render_template('fairness_statistics.html', 
+#                          period=period, 
+#                          stats=stats, 
+#                          insights=insights,
+#                          fairness_metrics=fairness_metrics,
+#                          fairness_summary=fairness_summary)
 
-
-
-
-
-
-
-# Enhanced fairness statistics route - REPLACE your existing fairness_statistics function with this
-import math
+import statistics
 from collections import defaultdict
-
 
 @main_bp.route('/period/<int:period_id>/fairness_statistics')
 def fairness_statistics(period_id):
-    """Display enhanced fairness and workload distribution statistics for a period."""
+    """Display fairness and workload distribution statistics for a period."""
     period = SchedulingPeriod.query.get_or_404(period_id)
     all_workers = Worker.query.order_by(Worker.name).all()
     all_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
@@ -2271,40 +2323,46 @@ def fairness_statistics(period_id):
         ShiftDefinition.scheduling_period_id == period.id
     ).all()
 
-    # --- Initialize Enhanced Statistics ---
+    # --- Initialize Statistics Dictionaries ---
     stats = {
-        'total_shifts': len(all_assignments), 'assigned_shifts': 0, 'unassigned_shifts': 0,
-        'unassigned_shifts_list': [], 'worker_stats': {}, 'role_stats': {},
-        'fairness_metrics': {}, 'satisfaction_metrics': {}, 'envy_metrics': {}
+        'total_shifts': len(all_assignments), 
+        'assigned_shifts': 0, 
+        'unassigned_shifts': 0,
+        'unassigned_shifts_list': [], 
+        'worker_stats': {}, 
+        'role_stats': {}
     }
     
     period_duration_hours = (period.period_end_datetime - period.period_start_datetime).total_seconds() / 3600.0
+
+    for worker in all_workers:
+        stats['worker_stats'][worker.id] = {
+            'name': worker.name, 
+            'total_shifts': 0, 
+            'total_hours': 0.0, 
+            'night_shifts': 0,
+            'weekend_shifts': 0, 
+            'difficulty_counts': defaultdict(int),
+            'downtime_hours': period_duration_hours, 
+            'role_distribution': defaultdict(int)
+        }
+    for role in all_roles:
+        stats['role_stats'][role.id] = {
+            'name': role.name, 
+            'total_shifts': 0, 
+            'total_hours': 0.0,
+            'worker_distribution': defaultdict(int), 
+            'unique_workers': 0
+        }
+
+    # --- Process All Assignments ---
     NIGHT_START_TIME = time(0, 0)
     NIGHT_END_TIME = time(6, 0)
 
-    # Initialize worker stats with enhanced metrics
-    for worker in all_workers:
-        stats['worker_stats'][worker.id] = {
-            'name': worker.name, 'total_shifts': 0, 'total_hours': 0.0, 'night_shifts': 0,
-            'weekend_shifts': 0, 'difficulty_counts': defaultdict(int),
-            'downtime_hours': period_duration_hours, 'role_distribution': defaultdict(int),
-            'weighted_difficulty_burden': 0.0, 'personal_satisfaction_score': 0.0,
-            'qualified_roles': [role.id for role in worker.qualified_roles if role.scheduling_period_id == period.id],
-            'assignments': [], 'rest_periods': [], 'max_continuous_work': 0.0
-        }
-    
-    for role in all_roles:
-        stats['role_stats'][role.id] = {
-            'name': role.name, 'total_shifts': 0, 'total_hours': 0.0,
-            'worker_distribution': defaultdict(int), 'unique_workers': 0,
-            'difficulty_rating': role.difficulty_multiplier
-        }
-
-    # --- Process All Assignments with Enhanced Tracking ---
     for assignment in all_assignments:
         slot = assignment.defined_slot
-        if not slot or not slot.job_role: continue
-        
+        if not slot or not slot.job_role: 
+            continue
         role = slot.job_role
         stats['role_stats'][role.id]['total_shifts'] += 1
         stats['role_stats'][role.id]['total_hours'] += slot.duration_total_seconds / 3600.0
@@ -2315,34 +2373,20 @@ def fairness_statistics(period_id):
             worker_stat = stats['worker_stats'][worker.id]
             duration_hours = slot.duration_total_seconds / 3600.0
             
-            # Basic stats
             worker_stat['total_shifts'] += 1
             worker_stat['total_hours'] += duration_hours
             worker_stat['downtime_hours'] -= duration_hours
             
-            # Store assignment details for advanced analysis
-            worker_stat['assignments'].append({
-                'start': slot.slot_start_datetime,
-                'end': slot.slot_end_datetime,
-                'duration': duration_hours,
-                'role_id': role.id,
-                'role_name': role.name,
-                'difficulty': role.difficulty_multiplier,
-                'is_night': slot.slot_start_datetime.time() < NIGHT_END_TIME or slot.slot_start_datetime.time() >= time(22, 0),
-                'is_weekend': slot.slot_start_datetime.weekday() >= 5
-            })
-            
-            # Night and weekend tracking
-            if slot.slot_start_datetime.time() < NIGHT_END_TIME or slot.slot_start_datetime.time() >= time(22, 0):
+            # Check for night shift
+            if slot.slot_start_datetime.time() < NIGHT_END_TIME:
                 worker_stat['night_shifts'] += 1
             
+            # Check for weekend shift (Saturday is 5, Sunday is 6)
             if slot.slot_start_datetime.weekday() >= 5:
                 worker_stat['weekend_shifts'] += 1
 
-            # Difficulty distribution and weighted burden
-            difficulty_level = int(role.difficulty_multiplier)
-            worker_stat['difficulty_counts'][difficulty_level] += 1
-            worker_stat['weighted_difficulty_burden'] += duration_hours * role.difficulty_multiplier
+            # Difficulty & Role Distribution
+            worker_stat['difficulty_counts'][int(role.difficulty_multiplier)] += 1
             worker_stat['role_distribution'][role.name] += 1
             stats['role_stats'][role.id]['worker_distribution'][worker.name] += 1
 
@@ -2350,185 +2394,149 @@ def fairness_statistics(period_id):
             stats['unassigned_shifts'] += 1
             stats['unassigned_shifts_list'].append(assignment)
 
-    # Calculate unique workers per role
     for role_stat in stats['role_stats'].values():
         role_stat['unique_workers'] = len(role_stat['worker_distribution'])
 
-    # --- ENHANCED FAIRNESS METRICS CALCULATION ---
-    
-    # 1. WORKER SATISFACTION SCORES
-    # Based on how "easy" their assigned work is relative to their own difficulty ratings
-    for worker_id, worker_stat in stats['worker_stats'].items():
-        if worker_stat['total_hours'] > 0:
-            # Personal satisfaction = inverse of weighted difficulty burden
-            avg_personal_difficulty = worker_stat['weighted_difficulty_burden'] / worker_stat['total_hours']
-            # Higher satisfaction when assigned easier work (lower difficulty ratings)
-            worker_stat['personal_satisfaction_score'] = max(0, (6 - avg_personal_difficulty) / 5) * 100
-        else:
-            worker_stat['personal_satisfaction_score'] = 50  # Neutral for unassigned workers
-
-    # 2. PROPORTIONAL FAIRNESS
-    # Each worker should get work proportional to their qualifications
-    total_qualified_roles = sum(len(worker_stat['qualified_roles']) for worker_stat in stats['worker_stats'].values())
-    if total_qualified_roles > 0:
-        for worker_id, worker_stat in stats['worker_stats'].items():
-            qualification_ratio = len(worker_stat['qualified_roles']) / total_qualified_roles if total_qualified_roles > 0 else 0
-            expected_hours = qualification_ratio * sum(w['total_hours'] for w in stats['worker_stats'].values())
-            actual_hours = worker_stat['total_hours']
-            
-            # Proportional fairness score (100 = perfectly proportional)
-            if expected_hours > 0:
-                proportional_score = min(100, (actual_hours / expected_hours) * 100)
-            else:
-                proportional_score = 100 if actual_hours == 0 else 0
-            
-            worker_stat['proportional_fairness_score'] = proportional_score
-
-    # 3. ENVY-FREE ALLOCATION ANALYSIS
-    envy_matrix = {}
-    for worker_id1, worker_stat1 in stats['worker_stats'].items():
-        envy_matrix[worker_id1] = {}
-        worker1_satisfaction = worker_stat1.get('personal_satisfaction_score', 50)
-        
-        for worker_id2, worker_stat2 in stats['worker_stats'].items():
-            if worker_id1 == worker_id2:
-                envy_matrix[worker_id1][worker_id2] = 0  # No self-envy
-                continue
-            
-            # Calculate if worker1 would prefer worker2's assignment
-            worker2_satisfaction = worker_stat2.get('personal_satisfaction_score', 50)
-            worker2_hours = worker_stat2['total_hours']
-            worker1_hours = worker_stat1['total_hours']
-            
-            # Envy calculation: prefer less work OR higher satisfaction with similar work
-            envy_score = 0
-            if worker2_hours < worker1_hours and worker2_satisfaction >= worker1_satisfaction:
-                envy_score = (worker1_hours - worker2_hours) * 10  # Envy for less work
-            elif worker2_satisfaction > worker1_satisfaction + 10 and abs(worker2_hours - worker1_hours) < 5:
-                envy_score = worker2_satisfaction - worker1_satisfaction  # Envy for better satisfaction
-            
-            envy_matrix[worker_id1][worker_id2] = max(0, envy_score)
-
-    # 4. EGALITARIAN METRICS (Minimize maximum burden)
-    if stats['worker_stats']:
-        max_burden = max(w['weighted_difficulty_burden'] for w in stats['worker_stats'].values())
-        min_burden = min(w['weighted_difficulty_burden'] for w in stats['worker_stats'].values())
-        burden_variance = statistics.variance([w['weighted_difficulty_burden'] for w in stats['worker_stats'].values()])
-        
-        stats['fairness_metrics']['max_burden'] = max_burden
-        stats['fairness_metrics']['min_burden'] = min_burden
-        stats['fairness_metrics']['burden_variance'] = burden_variance
-        stats['fairness_metrics']['egalitarian_score'] = max(0, 100 - (burden_variance * 10))  # Lower variance = higher score
-
-    # 5. NIGHT SHIFT FAIRNESS
-    night_shifts_total = sum(w['night_shifts'] for w in stats['worker_stats'].values())
-    active_workers = len([w for w in stats['worker_stats'].values() if w['total_shifts'] > 0])
-    
-    if active_workers > 0 and night_shifts_total > 0:
-        fair_night_share = night_shifts_total / active_workers
-        night_fairness_scores = {}
-        
-        for worker_id, worker_stat in stats['worker_stats'].items():
-            if worker_stat['total_shifts'] > 0:
-                night_deviation = abs(worker_stat['night_shifts'] - fair_night_share)
-                night_fairness_scores[worker_id] = max(0, 100 - (night_deviation * 20))
-            else:
-                night_fairness_scores[worker_id] = 100
-        
-        stats['fairness_metrics']['night_fairness_scores'] = night_fairness_scores
-        stats['fairness_metrics']['average_night_fairness'] = statistics.mean(night_fairness_scores.values())
-
-    # 6. REST TIME ANALYSIS
-    for worker_id, worker_stat in stats['worker_stats'].items():
-        assignments = sorted(worker_stat['assignments'], key=lambda x: x['start'])
-        rest_periods = []
-        max_continuous = 0
-        current_continuous = 0
-        
-        for i in range(len(assignments) - 1):
-            current_end = assignments[i]['end']
-            next_start = assignments[i + 1]['start']
-            rest_duration = (next_start - current_end).total_seconds() / 3600.0
-            
-            if rest_duration > 0:
-                rest_periods.append(rest_duration)
-                current_continuous = 0
-            else:
-                current_continuous += assignments[i]['duration']
-                max_continuous = max(max_continuous, current_continuous)
-        
-        worker_stat['rest_periods'] = rest_periods
-        worker_stat['max_continuous_work'] = max_continuous
-        worker_stat['average_rest_time'] = statistics.mean(rest_periods) if rest_periods else 0
-        worker_stat['min_rest_time'] = min(rest_periods) if rest_periods else 0
-
-    # Store enhanced metrics
-    stats['satisfaction_metrics'] = {
-        'avg_satisfaction': statistics.mean([w.get('personal_satisfaction_score', 50) for w in stats['worker_stats'].values()]),
-        'satisfaction_variance': statistics.variance([w.get('personal_satisfaction_score', 50) for w in stats['worker_stats'].values()]),
-        'proportional_scores': {w['name']: w.get('proportional_fairness_score', 0) for w in stats['worker_stats'].values()}
-    }
-    
-    stats['envy_metrics'] = {
-        'envy_matrix': {stats['worker_stats'][w1]['name']: {stats['worker_stats'][w2]['name']: score 
-                       for w2, score in envy_scores.items()} 
-                       for w1, envy_scores in envy_matrix.items()},
-        'total_envy': sum(sum(scores.values()) for scores in envy_matrix.values()),
-        'envy_free': sum(sum(scores.values()) for scores in envy_matrix.values()) == 0
-    }
-
-    # --- Generate Enhanced Insights ---
+    # --- Generate Key Fairness Insights ---
     insights = []
+    if stats['assigned_shifts'] > 0:
+        active_workers = [w for w in stats['worker_stats'].values() if w['total_shifts'] > 0]
+        if not active_workers: 
+            active_workers = stats['worker_stats'].values()
+        
+        avg_hours = sum(w['total_hours'] for w in active_workers) / len(active_workers)
+        avg_night = sum(w['night_shifts'] for w in active_workers) / len(active_workers)
+        avg_weekend = sum(w['weekend_shifts'] for w in active_workers) / len(active_workers)
+        
+        for w in stats['worker_stats'].values():
+            if w['total_hours'] > avg_hours * 1.5:
+                insights.append(f"<b>{w['name']}</b> is working significantly more hours ({w['total_hours']:.1f}) than the average ({avg_hours:.1f}).")
+            if w['total_hours'] < avg_hours * 0.5 and w['total_shifts'] > 0:
+                 insights.append(f"<b>{w['name']}</b> is working significantly fewer hours ({w['total_hours']:.1f}) than the average ({avg_hours:.1f}).")
+            if avg_night > 0.5 and w['night_shifts'] > avg_night * 1.75:
+                insights.append(f"<b>{w['name']}</b> has a high number of night shifts ({w['night_shifts']}).")
+            if avg_weekend > 0.5 and w['weekend_shifts'] > avg_weekend * 1.75:
+                 insights.append(f"<b>{w['name']}</b> has a high number of weekend shifts ({w['weekend_shifts']}).")
+            if w['total_shifts'] == 0:
+                insights.append(f"<b>{w['name']}</b> was not assigned any shifts.")
+    if stats['unassigned_shifts'] > 0:
+        insights.append(f"There are <b>{stats['unassigned_shifts']} unassigned shifts</b> that need coverage.")
+
+    # **NEW: Calculate algorithmic fairness metrics**
+    fairness_metrics = calculate_fairness_metrics(period_id)
     
-    # Satisfaction insights
-    satisfaction_scores = [w.get('personal_satisfaction_score', 50) for w in stats['worker_stats'].values()]
-    avg_satisfaction = statistics.mean(satisfaction_scores)
+    # Calculate overall fairness summary
+    fairness_summary = None
+    if fairness_metrics:
+        workers_with_assignments = [w for w in all_workers if w.id in fairness_metrics and fairness_metrics[w.id]['my_weighted_hours'] > 0]
+        total_workers = len(workers_with_assignments)
+        
+        if total_workers > 0:
+            proportional_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_proportional'])
+            envy_free_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_envy_free'])
+            ef1_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_ef1'])
+            
+            fairness_summary = {
+                'total_workers': total_workers,
+                'proportional_count': proportional_count,
+                'envy_free_count': envy_free_count,
+                'ef1_count': ef1_count,
+                'proportional_percentage': (proportional_count / total_workers * 100) if total_workers > 0 else 0,
+                'envy_free_percentage': (envy_free_count / total_workers * 100) if total_workers > 0 else 0,
+                'ef1_percentage': (ef1_count / total_workers * 100) if total_workers > 0 else 0,
+                'is_fully_proportional': proportional_count == total_workers,
+                'is_fully_envy_free': envy_free_count == total_workers,
+                'is_fully_ef1': ef1_count == total_workers
+            }
+            
+            # Add fairness insights
+            if fairness_summary['is_fully_envy_free']:
+                insights.append("<b>🎉 Perfect Fairness:</b> The allocation is envy-free! Every worker prefers their own assignment.")
+            elif fairness_summary['is_fully_ef1']:
+                insights.append(f"<b>✅ Near-Perfect Fairness:</b> The allocation is EF1 (envy-free up to 1 item). All {total_workers} workers have minimal envy.")
+            elif fairness_summary['is_fully_proportional']:
+                insights.append(f"<b>✓ Proportional:</b> All {total_workers} workers received at least their fair share (1/n of total).")
+            else:
+                non_proportional = total_workers - proportional_count
+                if non_proportional > 0:
+                    insights.append(f"<b>⚠️ Fairness Warning:</b> {non_proportional} worker(s) received less than their proportional share.")
+
+    # --- Prepare JSON-safe data for JavaScript charts ---
+    # Convert defaultdicts to regular dicts for JSON serialization
+    worker_stats_json = {}
+    for worker_id, worker_stat in stats['worker_stats'].items():
+        worker_stats_json[worker_id] = {
+            'name': worker_stat['name'],
+            'total_shifts': worker_stat['total_shifts'],
+            'total_hours': worker_stat['total_hours'],
+            'night_shifts': worker_stat['night_shifts'],
+            'weekend_shifts': worker_stat['weekend_shifts'],
+            'difficulty_counts': dict(worker_stat['difficulty_counts']),
+            'downtime_hours': worker_stat['downtime_hours'],
+            'role_distribution': dict(worker_stat['role_distribution'])
+        }
     
-    if avg_satisfaction < 40:
-        insights.append("⚠️ <b>Low overall worker satisfaction</b> - workers are getting more difficult tasks than expected")
-    elif avg_satisfaction > 80:
-        insights.append("✅ <b>High worker satisfaction</b> - workers are getting appropriately matched tasks")
+    role_stats_json = {}
+    for role_id, role_stat in stats['role_stats'].items():
+        role_stats_json[role_id] = {
+            'name': role_stat['name'],
+            'total_shifts': role_stat['total_shifts'],
+            'total_hours': role_stat['total_hours'],
+            'worker_distribution': dict(role_stat['worker_distribution']),
+            'unique_workers': role_stat['unique_workers']
+        }
     
-    # Envy insights
-    if stats['envy_metrics']['envy_free']:
-        insights.append("🎯 <b>Envy-free allocation achieved</b> - no worker prefers another's assignment")
+    # Clean fairness_metrics by removing non-serializable objects
+    fairness_metrics_json = {}
+    if fairness_metrics:
+        for worker_id, metrics in fairness_metrics.items():
+            # Create a clean copy without problematic objects
+            fairness_metrics_json[worker_id] = {
+                'worker_name': metrics.get('worker_name'),
+                'my_weighted_hours': metrics.get('my_weighted_hours'),
+                'fair_share': metrics.get('fair_share'),
+                'is_proportional': metrics.get('is_proportional'),
+                'is_envy_free': metrics.get('is_envy_free'),
+                'is_ef1': metrics.get('is_ef1'),
+                'envy_towards': metrics.get('envy_towards', []),
+                # Skip envy_details as it contains complex objects
+            }
+    
+    chart_data = {
+        'stats': {
+            'total_shifts': stats['total_shifts'],
+            'assigned_shifts': stats['assigned_shifts'],
+            'unassigned_shifts': stats['unassigned_shifts'],
+            'worker_stats': worker_stats_json,
+            'role_stats': role_stats_json
+        },
+        'fairnessSummary': fairness_summary,
+        'fairnessMetrics': fairness_metrics_json  # Use cleaned version
+    }
+
+    return render_template('fairness_statistics.html', 
+                         period=period, 
+                         stats=stats, 
+                         insights=insights,
+                         fairness_metrics=fairness_metrics,
+                         fairness_summary=fairness_summary,
+                         chart_data=chart_data)
+
+# helper function to make SQLAlchemy objects JSON serializable
+def make_json_safe(obj):
+    """Recursively convert objects to JSON-safe formats"""
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_safe(item) for item in obj]
+    elif isinstance(obj, defaultdict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif hasattr(obj, '__dict__'):
+        # SQLAlchemy object - convert to dict of safe values
+        return {k: make_json_safe(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
     else:
-        total_envy = stats['envy_metrics']['total_envy']
-        if total_envy > 50:
-            insights.append(f"⚠️ <b>High envy detected</b> - total envy score: {total_envy:.1f}")
-    
-    # Egalitarian insights
-    if 'egalitarian_score' in stats['fairness_metrics']:
-        egal_score = stats['fairness_metrics']['egalitarian_score']
-        if egal_score > 80:
-            insights.append("⚖️ <b>Good egalitarian distribution</b> - workload burdens are well balanced")
-        elif egal_score < 50:
-            insights.append("⚠️ <b>Uneven burden distribution</b> - some workers have significantly harder workloads")
-    
-    # Night shift insights
-    if 'average_night_fairness' in stats['fairness_metrics']:
-        night_fairness = stats['fairness_metrics']['average_night_fairness']
-        if night_fairness > 80:
-            insights.append("🌙 <b>Fair night shift distribution</b>")
-        elif night_fairness < 60:
-            insights.append("⚠️ <b>Uneven night shift distribution</b> - some workers have disproportionate night work")
-    
-    # Rest time insights
-    min_rest_times = [w['min_rest_time'] for w in stats['worker_stats'].values() if w['rest_periods']]
-    if min_rest_times and min(min_rest_times) < 8:
-        insights.append("😴 <b>Insufficient rest periods detected</b> - some workers have less than 8 hours between shifts")
-    
-    # Proportional fairness insights
-    prop_scores = [w.get('proportional_fairness_score', 0) for w in stats['worker_stats'].values()]
-    avg_prop = statistics.mean(prop_scores) if prop_scores else 0
-    if avg_prop < 70:
-        insights.append("📊 <b>Disproportional allocation</b> - work distribution doesn't match worker qualifications")
-
-    return render_template('fairness_statistics.html', period=period, stats=stats, insights=insights)
-
-
-
-
+        # Primitive types (int, float, str, bool, None)
+        return obj
 
 ############### Adding CSV and Excel difficulty export for workers ###############
 # Add these routes to routes.py
@@ -2608,9 +2616,17 @@ def export_rating_template(period_id):
     return response
 
 
+
+
+
+
+
+
+
+############## Integrating extreme rating pattern detection ##############
 # @main_bp.route('/period/<int:period_id>/import_ratings', methods=['GET', 'POST'])
 # def import_worker_ratings(period_id):
-#     """Import worker difficulty ratings from matrix format CSV"""
+#     """Import worker difficulty ratings from matrix format CSV with extreme rating protection"""
 #     period = SchedulingPeriod.query.get_or_404(period_id)
     
 #     if request.method == 'GET':
@@ -2709,11 +2725,22 @@ def export_rating_template(period_id):
 #             flash('No valid ratings found in the uploaded matrix. Please check the format and try again.', 'warning')
 #             return redirect(url_for('main.import_worker_ratings', period_id=period_id))
         
+#         # ENHANCED: Detect and handle extreme rating patterns
+#         pattern_warnings, cleaned_ratings, normalized_ratings = detect_extreme_rating_patterns(ratings_by_role, period_id)
+#         distribution_warnings = analyze_role_distribution(cleaned_ratings if cleaned_ratings else ratings_by_role)
+        
+#         # Use Strategy 1: Remove extreme workers entirely (recommended approach)
+#         final_ratings = cleaned_ratings if cleaned_ratings else ratings_by_role
+        
+#         # Combine all warnings
+#         all_warnings = pattern_warnings + distribution_warnings
+        
 #         # Calculate average ratings and update job roles
 #         updated_roles = []
 #         role_stats = {}
+#         removed_roles = []
         
-#         for role_name, ratings_list in ratings_by_role.items():
+#         for role_name, ratings_list in final_ratings.items():
 #             # Find the corresponding job role
 #             role = JobRole.query.filter_by(
 #                 scheduling_period_id=period_id, 
@@ -2722,6 +2749,11 @@ def export_rating_template(period_id):
             
 #             if not role:
 #                 current_app.logger.warning(f"Role '{role_name}' not found in period {period.name}")
+#                 continue
+            
+#             if not ratings_list:  # No valid ratings after cleaning
+#                 current_app.logger.warning(f"No valid ratings for role '{role_name}' after cleaning")
+#                 removed_roles.append(role_name)
 #                 continue
             
 #             # Calculate average rating
@@ -2738,8 +2770,14 @@ def export_rating_template(period_id):
 #                 'new_difficulty': role.difficulty_multiplier,
 #                 'num_ratings': len(rating_values),
 #                 'ratings': rating_values,
-#                 'avg_rating': avg_rating
+#                 'avg_rating': avg_rating,
+#                 'cleaned': len(ratings_list) != len(ratings_by_role.get(role_name, []))
 #             }
+        
+#         # Handle roles that lost all ratings due to cleaning
+#         for role_name in removed_roles:
+#             if role_name in ratings_by_role:  # Had ratings before cleaning
+#                 all_warnings.append(f"Role '{role_name}' lost all ratings after removing extreme patterns - keeping original difficulty")
         
 #         # Commit changes
 #         db.session.commit()
@@ -2753,28 +2791,28 @@ def export_rating_template(period_id):
 #         if error_count > 0:
 #             flash(f"Found {error_count} invalid ratings that were ignored.", "warning")
         
+#         # Show pattern detection warnings
+#         for warning in all_warnings:
+#             flash(warning, "warning")
+        
 #         # Store detailed results in session for display
 #         session['import_results'] = {
 #             'role_stats': role_stats,
 #             'processed_count': processed_count,
 #             'skipped_count': skipped_count,
-#             'error_count': error_count
+#             'error_count': error_count,
+#             'pattern_warnings': pattern_warnings,
+#             'distribution_warnings': distribution_warnings,
+#             'extreme_workers_detected': len(pattern_warnings) > 0
 #         }
         
-#         # return redirect(url_for('main.show_import_results', period_id=period_id))
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+#         return redirect(url_for('main.show_import_results', period_id=period_id))
         
 #     except Exception as e:
 #         current_app.logger.error(f"Error importing matrix ratings: {e}")
 #         flash(f"Error processing matrix file: {e}", "danger")
 #         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
 
-
-
-
-
-
-############## Integrating extreme rating pattern detection ##############
 @main_bp.route('/period/<int:period_id>/import_ratings', methods=['GET', 'POST'])
 def import_worker_ratings(period_id):
     """Import worker difficulty ratings from matrix format CSV with extreme rating protection"""
@@ -2825,6 +2863,7 @@ def import_worker_ratings(period_id):
         
         # Process ratings
         ratings_by_role = defaultdict(list)  # role_name -> list of ratings
+        worker_rating_map = defaultdict(dict)  # worker_name -> {role_name: rating}
         processed_count = 0
         skipped_count = 0
         error_count = 0
@@ -2865,6 +2904,10 @@ def import_worker_ratings(period_id):
                         'rating': rating,
                         'comments': f"Matrix import from {worker_name}"
                     })
+                    
+                    # Store for individual tracking
+                    worker_rating_map[worker_name][role_name] = rating
+                    
                     processed_count += 1
                     
                 except ValueError:
@@ -2886,10 +2929,11 @@ def import_worker_ratings(period_id):
         # Combine all warnings
         all_warnings = pattern_warnings + distribution_warnings
         
-        # Calculate average ratings and update job roles
+        # Calculate average ratings and update job roles AND store individual ratings
         updated_roles = []
         role_stats = {}
         removed_roles = []
+        individual_ratings_saved = 0
         
         for role_name, ratings_list in final_ratings.items():
             # Find the corresponding job role
@@ -2907,7 +2951,35 @@ def import_worker_ratings(period_id):
                 removed_roles.append(role_name)
                 continue
             
-            # Calculate average rating
+            # **STEP 2A: Store individual ratings in database**
+            for rating_data in ratings_list:
+                worker = Worker.query.filter_by(name=rating_data['worker']).first()
+                if worker:
+                    # Check if rating already exists
+                    existing_rating = WorkerRoleRating.query.filter_by(
+                        worker_id=worker.id,
+                        job_role_id=role.id
+                    ).first()
+                    
+                    if existing_rating:
+                        # Update existing rating
+                        old_rating = existing_rating.difficulty_rating
+                        existing_rating.difficulty_rating = float(rating_data['rating'])
+                        existing_rating.created_at = datetime.utcnow()
+                        current_app.logger.info(f"Updated rating for {worker.name} on {role_name}: {old_rating} -> {rating_data['rating']}")
+                    else:
+                        # Create new rating
+                        new_rating = WorkerRoleRating(
+                            worker_id=worker.id,
+                            job_role_id=role.id,
+                            difficulty_rating=float(rating_data['rating'])
+                        )
+                        db.session.add(new_rating)
+                        current_app.logger.info(f"Created new rating for {worker.name} on {role_name}: {rating_data['rating']}")
+                    
+                    individual_ratings_saved += 1
+            
+            # **STEP 2B: Calculate average rating (for fallback and display)**
             rating_values = [r['rating'] for r in ratings_list]
             avg_rating = sum(rating_values) / len(rating_values)
             old_difficulty = role.difficulty_multiplier
@@ -2935,6 +3007,7 @@ def import_worker_ratings(period_id):
         
         # Create success message with details
         flash(f"Successfully imported matrix ratings! Updated {len(updated_roles)} job roles based on {processed_count} worker ratings.", "success")
+        flash(f"Saved {individual_ratings_saved} individual worker-role ratings for personalized fairness analysis.", "info")
         
         if skipped_count > 0:
             flash(f"Skipped {skipped_count} empty/N/A ratings (workers who didn't rate certain roles).", "info")
@@ -2952,6 +3025,7 @@ def import_worker_ratings(period_id):
             'processed_count': processed_count,
             'skipped_count': skipped_count,
             'error_count': error_count,
+            'individual_ratings_saved': individual_ratings_saved,
             'pattern_warnings': pattern_warnings,
             'distribution_warnings': distribution_warnings,
             'extreme_workers_detected': len(pattern_warnings) > 0
@@ -2963,7 +3037,6 @@ def import_worker_ratings(period_id):
         current_app.logger.error(f"Error importing matrix ratings: {e}")
         flash(f"Error processing matrix file: {e}", "danger")
         return redirect(url_for('main.import_worker_ratings', period_id=period_id))
-
 
 # Helper functions - add these to your routes.py file as well:
 
@@ -3296,3 +3369,202 @@ def enhanced_rating_processing(ratings_by_role, period_id):
     # final_ratings = normalized_ratings
     
     return final_ratings, all_warnings
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+########### Helper functions for fairness statistics ###########
+def get_worker_individual_difficulty(worker_id, job_role_id):
+    """Get worker's individual rating for a role, or use role average as fallback"""
+    rating = WorkerRoleRating.query.filter_by(
+        worker_id=worker_id,
+        job_role_id=job_role_id
+    ).first()
+    
+    if rating:
+        return rating.difficulty_rating
+    else:
+        # Fallback to role's average difficulty
+        role = JobRole.query.get(job_role_id)
+        return role.difficulty_multiplier if role else 1.0
+
+
+def calculate_fairness_metrics(period_id):
+    """
+    Calculate fairness metrics (proportionality, envy-free, EF1) for a scheduling period
+    Based on individual worker perceptions of difficulty
+    """
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    # Get all workers and assignments
+    all_workers = Worker.query.all()
+    all_assignments = ScheduledShift.query.options(
+        joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role),
+        joinedload(ScheduledShift.worker_assigned)
+    ).join(ShiftDefinition).filter(
+        ShiftDefinition.scheduling_period_id == period_id,
+        ScheduledShift.worker_id.isnot(None)
+    ).all()
+    
+    if not all_workers or not all_assignments:
+        return None
+    
+    # Calculate each worker's bundle (weighted hours by their own perception)
+    worker_bundles = defaultdict(lambda: {'real_hours': 0, 'weighted_hours': 0, 'shifts': []})
+    
+    for assignment in all_assignments:
+        if not assignment.worker_assigned:
+            continue
+            
+        worker = assignment.worker_assigned
+        slot = assignment.defined_slot
+        role_id = slot.job_role_id
+        
+        # Real duration
+        real_hours = slot.duration_total_seconds / 3600.0
+        
+        # Worker's individual difficulty perception
+        individual_difficulty = get_worker_individual_difficulty(worker.id, role_id)
+        weighted_hours = real_hours * individual_difficulty
+        
+        worker_bundles[worker.id]['real_hours'] += real_hours
+        worker_bundles[worker.id]['weighted_hours'] += weighted_hours
+        worker_bundles[worker.id]['shifts'].append({
+            'assignment': assignment,
+            'real_hours': real_hours,
+            'weighted_hours': weighted_hours,
+            'role_id': role_id
+        })
+    
+    # Calculate fairness metrics for each worker
+    fairness_results = {}
+    
+    for worker in all_workers:
+        if worker.id not in worker_bundles:
+            # Worker has no assignments
+            fairness_results[worker.id] = {
+                'worker_name': worker.name,
+                'my_weighted_hours': 0,
+                'fair_share': 0,
+                'is_proportional': False,
+                'envy_towards': [],
+                'is_envy_free': True,
+                'is_ef1': True,
+                'envy_details': []
+            }
+            continue
+        
+        # Calculate this worker's fair share
+        # Fair share = (Total weighted hours perceived by ME) / (Number of workers)
+        total_weighted_by_me = 0
+        for assignment in all_assignments:
+            if assignment.worker_assigned:
+                slot = assignment.defined_slot
+                real_hours = slot.duration_total_seconds / 3600.0
+                my_difficulty = get_worker_individual_difficulty(worker.id, slot.job_role_id)
+                total_weighted_by_me += real_hours * my_difficulty
+        
+        n_workers = len(all_workers)
+        fair_share = total_weighted_by_me / n_workers if n_workers > 0 else 0
+        
+        my_weighted_hours = worker_bundles[worker.id]['weighted_hours']
+        
+        # Check proportionality: Do I get at least 1/n of the total (in my view)?
+        is_proportional = my_weighted_hours >= fair_share * 0.99  # Small tolerance
+        
+        # Check envy: Do I prefer someone else's bundle?
+        envy_towards = []
+        envy_details = []
+        
+        for other_worker in all_workers:
+            if other_worker.id == worker.id:
+                continue
+            
+            if other_worker.id not in worker_bundles:
+                continue
+            
+            # Calculate how I value the other worker's bundle
+            other_bundle_value_to_me = 0
+            other_bundle_shifts = []
+            
+            for shift_info in worker_bundles[other_worker.id]['shifts']:
+                slot = shift_info['assignment'].defined_slot
+                real_hours = shift_info['real_hours']
+                my_difficulty = get_worker_individual_difficulty(worker.id, slot.job_role_id)
+                value_to_me = real_hours * my_difficulty
+                other_bundle_value_to_me += value_to_me
+                other_bundle_shifts.append({
+                    'shift': shift_info['assignment'],
+                    'value_to_me': value_to_me,
+                    'role_name': slot.job_role.name
+                })
+            
+            # Do I envy this worker?
+            if other_bundle_value_to_me < my_weighted_hours * 0.99:  # Small tolerance
+                # I prefer their bundle (less work in my view)
+                envy_amount = my_weighted_hours - other_bundle_value_to_me
+                envy_towards.append(other_worker.id)
+                
+                # Sort their shifts by value to me (descending) for EF1 check
+                other_bundle_shifts_sorted = sorted(other_bundle_shifts, key=lambda s: s['value_to_me'], reverse=True)
+                
+                envy_details.append({
+                    'envied_worker': other_worker.name,
+                    'their_bundle_value_to_me': other_bundle_value_to_me,
+                    'my_bundle_value': my_weighted_hours,
+                    'envy_amount': envy_amount,
+                    'their_shifts': other_bundle_shifts_sorted
+                })
+        
+        is_envy_free = len(envy_towards) == 0
+        
+        # Check EF1: Is envy eliminated by removing one shift?
+        is_ef1 = is_envy_free  # Start optimistic
+        
+        if not is_envy_free:
+            # For each envied worker, check if removing their most valuable shift (to me) eliminates envy
+            for envy_detail in envy_details:
+                their_shifts = envy_detail['their_shifts']
+                
+                if not their_shifts:
+                    continue
+                
+                # Find the shift I value most in their bundle (already sorted)
+                most_valuable_shift = their_shifts[0]
+                
+                # Value of their bundle minus that shift
+                remaining_value = envy_detail['their_bundle_value_to_me'] - most_valuable_shift['value_to_me']
+                
+                # If I still envy after removing one shift, not EF1
+                if remaining_value < my_weighted_hours * 0.99:
+                    is_ef1 = False
+                    envy_detail['is_ef1_satisfied'] = False
+                    envy_detail['most_valuable_shift'] = most_valuable_shift
+                    envy_detail['remaining_after_removal'] = remaining_value
+                else:
+                    envy_detail['is_ef1_satisfied'] = True
+                    envy_detail['most_valuable_shift'] = most_valuable_shift
+                    envy_detail['remaining_after_removal'] = remaining_value
+        
+        fairness_results[worker.id] = {
+            'worker_name': worker.name,
+            'my_weighted_hours': my_weighted_hours,
+            'fair_share': fair_share,
+            'is_proportional': is_proportional,
+            'envy_towards': envy_towards,
+            'is_envy_free': is_envy_free,
+            'is_ef1': is_ef1,
+            'envy_details': envy_details
+        }
+    
+    return fairness_results

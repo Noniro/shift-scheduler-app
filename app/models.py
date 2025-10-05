@@ -223,3 +223,20 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), index=True, unique=True)
     password_hash = db.Column(db.String(128))
+
+
+# Add this new model to models.py
+class WorkerRoleRating(db.Model):
+    """Stores individual worker ratings for job roles"""
+    __tablename__ = 'worker_role_rating'
+    id = db.Column(db.Integer, primary_key=True)
+    worker_id = db.Column(db.Integer, db.ForeignKey('worker.id', ondelete="CASCADE"), nullable=False)
+    job_role_id = db.Column(db.Integer, db.ForeignKey('job_role.id', ondelete="CASCADE"), nullable=False)
+    difficulty_rating = db.Column(db.Float, nullable=False)  # 1.0 to 5.0
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    worker = db.relationship('Worker', backref='role_ratings')
+    job_role = db.relationship('JobRole', backref='worker_ratings')
+    
+    def __repr__(self):
+        return f'<WorkerRoleRating worker={self.worker_id} role={self.job_role_id} rating={self.difficulty_rating}>'

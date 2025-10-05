@@ -1,20 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Enhanced Fairness Statistics for {{ period.name }}{% endblock %}
+{% block title %}Fairness Statistics for {{ period.name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <h2>🎯 Enhanced Fairness Statistics</h2>
+        <h2>📊 Fairness & Workload Statistics</h2>
         <p class="lead mb-0">For Scheduling Period: <strong>{{ period.name }}</strong></p>
-        <small>({{ period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ period.period_end_datetime.strftime('%b %d, %Y %H:%M') }})</small>
+        <small class="text-muted">({{ period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ period.period_end_datetime.strftime('%b %d, %Y %H:%M') }})</small>
     </div>
     <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">Back to Dashboard</a>
 </div>
 
-<!-- Enhanced Fairness Insights -->
+<!-- Overall Statistics -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header bg-primary text-white"><h4 class="mb-0">📈 Overall Period Statistics</h4></div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-4">
+                <div class="card bg-light border-0">
+                    <div class="card-body">
+                        <h5 class="card-title text-muted">Total Shifts</h5>
+                        <p class="card-text display-4 text-dark">{{ stats.total_shifts }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-success text-white border-0">
+                    <div class="card-body">
+                        <h5 class="card-title">Assigned Shifts</h5>
+                        <p class="card-text display-4">{{ stats.assigned_shifts }}</p>
+                        <small>{{ "%.1f"|format((stats.assigned_shifts / stats.total_shifts * 100) if stats.total_shifts > 0 else 0) }}%</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card {% if stats.unassigned_shifts > 0 %}bg-danger{% else %}bg-secondary{% endif %} text-white border-0">
+                    <div class="card-body">
+                        <h5 class="card-title">Unassigned Shifts</h5>
+                        <p class="card-text display-4">{{ stats.unassigned_shifts }}</p>
+                        <small>{{ "%.1f"|format((stats.unassigned_shifts / stats.total_shifts * 100) if stats.total_shifts > 0 else 0) }}%</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Key Fairness Insights -->
 {% if insights %}
-<div class="alert alert-info mb-4">
-    <h5 class="alert-heading">🔍 Algorithmic Fairness Analysis</h5>
+<div class="alert alert-info mb-4 shadow-sm">
+    <h5 class="alert-heading">💡 Key Insights</h5>
     <ul class="mb-0">
         {% for insight in insights %}
             <li>{{ insight|safe }}</li>
@@ -23,238 +58,418 @@
 </div>
 {% endif %}
 
-<!-- Overall Fairness Metrics Dashboard -->
-<div class="row mb-4">
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0">🎯 Core Fairness Metrics</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-3">
-                        <h6>Satisfaction Score</h6>
-                        {% set satisfaction_avg = stats.satisfaction_metrics.avg_satisfaction|default(0) %}
-                        {% set satisfaction_width = satisfaction_avg|round(1) %}
-                        <div class="progress mb-2">
-                            <div class="progress-bar bg-success w-{{ satisfaction_width|int }}"></div>
+<!-- ALGORITHMIC FAIRNESS ANALYSIS -->
+{% if fairness_metrics and fairness_summary %}
+<div class="card mb-4 shadow border-primary">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">🎯 Algorithmic Fairness Analysis</h4>
+        <small>Based on individual worker difficulty perceptions</small>
+    </div>
+    <div class="card-body">
+        
+        <!-- Fairness Summary Cards -->
+        <div class="row text-center mb-4">
+            <!-- Proportional -->
+            <div class="col-md-4">
+                <div class="card h-100 {% if fairness_summary.is_fully_proportional %}border-success{% else %}border-warning{% endif %}">
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <span style="font-size: 3rem;">
+                                {% if fairness_summary.is_fully_proportional %}✅{% else %}⚠️{% endif %}
+                            </span>
                         </div>
-                        <small>{{ "%.1f"|format(satisfaction_avg) }}%</small>
-                    </div>
-                    <div class="col-md-3">
-                        <h6>Envy-Free Status</h6>
-                        {% if stats.envy_metrics.envy_free %}
-                            <span class="badge badge-success badge-pill p-3">✅ Envy-Free</span>
-                        {% else %}
-                            {% set envy_total = stats.envy_metrics.total_envy|default(0) %}
-                            <span class="badge badge-warning badge-pill p-3">⚠️ Envy: {{ "%.1f"|format(envy_total) }}</span>
-                        {% endif %}
-                    </div>
-                    <div class="col-md-3">
-                        <h6>Egalitarian Score</h6>
-                        {% set egal_score = stats.fairness_metrics.get('egalitarian_score', 0) %}
-                        {% set egal_width = egal_score|round(1) %}
-                        <div class="progress mb-2">
-                            <div class="progress-bar bg-info w-{{ egal_width|int }}"></div>
+                        <h5 class="card-title">Proportional Share</h5>
+                        <h2 class="{% if fairness_summary.is_fully_proportional %}text-success{% else %}text-warning{% endif %}">
+                            {{ fairness_summary.proportional_count }}/{{ fairness_summary.total_workers }}
+                        </h2>
+                        <div class="progress mb-2" style="height: 25px;">
+  <div class="progress-bar 
+              {% if fairness_summary.is_fully_proportional %}bg-success{% else %}bg-warning{% endif %} 
+              w-{{ fairness_summary.proportional_percentage | round(0, 'floor') | int }}"
+       role="progressbar"
+       aria-valuenow="{{ fairness_summary.proportional_percentage }}"
+       aria-valuemin="0" aria-valuemax="100">
+    {{ "%.0f"|format(fairness_summary.proportional_percentage) }}%
+  </div>
+</div>
+
                         </div>
-                        <small>{{ "%.1f"|format(egal_score) }}%</small>
-                    </div>
-                    <div class="col-md-3">
-                        <h6>Night Fairness</h6>
-                        {% set night_fairness = stats.fairness_metrics.get('average_night_fairness', 100) %}
-                        {% set night_width = night_fairness|round(1) %}
-                        <div class="progress mb-2">
-                            <div class="progress-bar bg-dark w-{{ night_width|int }}"></div>
-                        </div>
-                        <small>{{ "%.1f"|format(night_fairness) }}%</small>
+                        <small class="text-muted">Workers get ≥ their fair share (1/n)</small>
                     </div>
                 </div>
+            </div>
+            <!-- Envy-Free -->
+            <div class="col-md-4">
+                <div class="card h-100 {% if fairness_summary.is_fully_envy_free %}border-success{% else %}border-danger{% endif %}">
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <span style="font-size: 3rem;">
+                                {% if fairness_summary.is_fully_envy_free %}🎉{% else %}😟{% endif %}
+                            </span>
+                        </div>
+                        <h5 class="card-title">Envy-Free (EF)</h5>
+                        <h2 class="{% if fairness_summary.is_fully_envy_free %}text-success{% else %}text-danger{% endif %}">
+                            {{ fairness_summary.envy_free_count }}/{{ fairness_summary.total_workers }}
+                        </h2>
+                       <div class="progress mb-2" style="height: 25px;">
+  <div class="progress-bar 
+              {% if fairness_summary.is_fully_envy_free %}bg-success{% else %}bg-danger{% endif %} 
+              w-{{ fairness_summary.envy_free_percentage | round(0, 'floor') | int }}"
+       role="progressbar"
+       aria-valuenow="{{ fairness_summary.envy_free_percentage }}" 
+       aria-valuemin="0" aria-valuemax="100">
+    {{ "%.0f"|format(fairness_summary.envy_free_percentage) }}%
+  </div>
+</div>
+
+                        </div>
+                        <small class="text-muted">Workers don't prefer others' bundles</small>
+                    </div>
+                </div>
+            </div>
+            <!-- EF1 -->
+            <div class="col-md-4">
+                <div class="card h-100 {% if fairness_summary.is_fully_ef1 %}border-success{% else %}border-info{% endif %}">
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <span style="font-size: 3rem;">
+                                {% if fairness_summary.is_fully_ef1 %}👍{% else %}🤔{% endif %}
+                            </span>
+                        </div>
+                        <h5 class="card-title">EF1 (Almost Envy-Free)</h5>
+                        <h2 class="{% if fairness_summary.is_fully_ef1 %}text-success{% else %}text-info{% endif %}">
+                            {{ fairness_summary.ef1_count }}/{{ fairness_summary.total_workers }}
+                        </h2>
+                        <div class="progress mb-2" style="height: 25px;">
+  <div class="progress-bar 
+              {% if fairness_summary.is_fully_ef1 %}bg-success{% else %}bg-info{% endif %}
+              w-{{ fairness_summary.ef1_percentage | round(0, 'floor') | int }}"
+       role="progressbar"
+       aria-valuenow="{{ fairness_summary.ef1_percentage }}" 
+       aria-valuemin="0" aria-valuemax="100">
+    {{ "%.0f"|format(fairness_summary.ef1_percentage) }}%
+  </div>
+</div>
+
+                        </div>
+                        <small class="text-muted">Envy removed by 1 shift</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Fairness Visualization Chart -->
+        <div class="card mb-4 bg-light">
+            <div class="card-body">
+                <h5 class="card-title">Fairness Properties Comparison</h5>
+                <canvas id="fairnessComparisonChart" height="100"></canvas>
+            </div>
+        </div>
+        
+        <!-- Individual Worker Fairness Details -->
+        <h5 class="mb-3">👤 Individual Worker Fairness Details</h5>
+        <div class="accordion" id="fairnessAccordion">
+            {% for worker_id, metrics in fairness_metrics.items() %}
+                {% if metrics.my_weighted_hours > 0 %}
+                <div class="card mb-2">
+                    <div class="card-header {% if metrics.is_envy_free %}bg-success text-white{% elif metrics.is_ef1 %}bg-info text-white{% else %}bg-warning{% endif %}" 
+                         id="heading{{ worker_id }}">
+                        <h5 class="mb-0">
+                            <button class="btn btn-link text-white text-decoration-none" type="button" 
+                                    data-toggle="collapse" data-target="#collapse{{ worker_id }}" 
+                                    aria-expanded="false" aria-controls="collapse{{ worker_id }}">
+                                <strong>{{ metrics.worker_name }}</strong>
+                                <span class="float-right">
+                                    {% if metrics.is_proportional %}
+                                        <span class="badge badge-light">✓ Proportional</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">✗ Below Fair Share</span>
+                                    {% endif %}
+                                    {% if metrics.is_envy_free %}
+                                        <span class="badge badge-light">✓ Envy-Free</span>
+                                    {% elif metrics.is_ef1 %}
+                                        <span class="badge badge-light">✓ EF1</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">✗ Has Envy</span>
+                                    {% endif %}
+                                </span>
+                            </button>
+                        </h5>
+                    </div>
+                    <div id="collapse{{ worker_id }}" class="collapse" aria-labelledby="heading{{ worker_id }}" data-parent="#fairnessAccordion">
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Workload Column -->
+                                <div class="col-md-6">
+                                    <h6>📊 Workload (My Perception)</h6>
+                                    <table class="table table-sm table-borderless">
+                                        <tr>
+                                            <td><strong>My Weighted Hours:</strong></td>
+                                            <td class="text-right">
+                                                <span class="badge badge-primary badge-pill">
+                                                    {{ "%.2f"|format(metrics.my_weighted_hours) }}h
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>My Fair Share (1/{{ fairness_summary.total_workers }}):</strong></td>
+                                            <td class="text-right">
+                                                <span class="badge badge-secondary badge-pill">
+                                                    {{ "%.2f"|format(metrics.fair_share) }}h
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Difference:</strong></td>
+                                            <td class="text-right">
+                                                {% set diff = metrics.my_weighted_hours - metrics.fair_share %}
+                                                <span class="badge {% if diff >= 0 %}badge-success{% else %}badge-danger{% endif %} badge-pill">
+                                                    {{ "%+.2f"|format(diff) }}h
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    
+                                    <!-- Mini chart for this worker -->
+                                    <div class="mt-3">
+                                        <canvas id="workerChart{{ worker_id }}" height="150"></canvas>
+                                    </div>
+                                </div>
+                                
+                                <!-- Fairness Properties Column -->
+                                <div class="col-md-6">
+                                    <h6>🎯 Fairness Properties</h6>
+                                    <div class="list-group list-group-flush">
+                                        <div class="list-group-item {% if metrics.is_proportional %}list-group-item-success{% else %}list-group-item-danger{% endif %}">
+                                            {% if metrics.is_proportional %}
+                                                <strong>✅ Proportional</strong><br>
+                                                <small>Gets at least fair share (1/n of total)</small>
+                                            {% else %}
+                                                <strong>❌ Not Proportional</strong><br>
+                                                <small>Gets less than fair share</small>
+                                            {% endif %}
+                                        </div>
+                                        <div class="list-group-item {% if metrics.is_envy_free %}list-group-item-success{% else %}list-group-item-warning{% endif %}">
+                                            {% if metrics.is_envy_free %}
+                                                <strong>✅ Envy-Free</strong><br>
+                                                <small>Doesn't prefer anyone's bundle</small>
+                                            {% else %}
+                                                <strong>⚠️ Has Envy</strong><br>
+                                                <small>Prefers {{ metrics.envy_towards|length }} other bundle(s)</small>
+                                            {% endif %}
+                                        </div>
+                                        <div class="list-group-item {% if metrics.is_ef1 %}list-group-item-info{% else %}list-group-item-danger{% endif %}">
+                                            {% if metrics.is_ef1 %}
+                                                <strong>✅ EF1 Satisfied</strong><br>
+                                                <small>Envy eliminated by removing 1 shift</small>
+                                            {% elif not metrics.is_envy_free %}
+                                                <strong>❌ Not EF1</strong><br>
+                                                <small>Significant envy remains</small>
+                                            {% else %}
+                                                <strong>✅ EF1 (Already Envy-Free)</strong>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Envy Details -->
+                            {% if metrics.envy_details %}
+                            <hr>
+                            <h6>😟 Envy Analysis</h6>
+                            {% for envy in metrics.envy_details %}
+                            <div class="alert {% if envy.is_ef1_satisfied %}alert-info{% else %}alert-danger{% endif %} mb-2">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong>Envies: {{ envy.envied_worker }}</strong>
+                                    </div>
+                                    <span class="badge {% if envy.is_ef1_satisfied %}badge-info{% else %}badge-danger{% endif %} badge-pill">
+                                        Envy: {{ "%.2f"|format(envy.envy_amount) }}h
+                                    </span>
+                                </div>
+                                <hr class="my-2">
+                                <div class="row small">
+                                    <div class="col-md-6">
+                                        <strong>Their bundle (my view):</strong> {{ "%.2f"|format(envy.their_bundle_value_to_me) }}h
+                                    </div>
+                                    <div class="col-md-6">
+                                        <strong>My bundle (my view):</strong> {{ "%.2f"|format(envy.my_bundle_value) }}h
+                                    </div>
+                                </div>
+                                {% if envy.is_ef1_satisfied %}
+                                    <div class="mt-2 text-success">
+                                        <small>
+                                            ✅ <strong>EF1 satisfied:</strong> Removing their most valuable shift 
+                                            ({{ envy.most_valuable_shift.role_name }}: {{ "%.2f"|format(envy.most_valuable_shift.value_to_me) }}h) 
+                                            eliminates envy. Remaining value: {{ "%.2f"|format(envy.remaining_after_removal) }}h
+                                        </small>
+                                    </div>
+                                {% else %}
+                                    <div class="mt-2 text-danger">
+                                        <small>
+                                            ❌ <strong>EF1 not satisfied:</strong> Even after removing their most valuable shift 
+                                            ({{ envy.most_valuable_shift.role_name }}: {{ "%.2f"|format(envy.most_valuable_shift.value_to_me) }}h), 
+                                            envy remains. Remaining value: {{ "%.2f"|format(envy.remaining_after_removal) }}h
+                                        </small>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+        
+        <!-- Fairness Concepts Explanation -->
+        <div class="alert alert-light border mt-4">
+            <h6>📚 Fairness Concepts (from Algorithmic Economics)</h6>
+            <div class="row">
+                <div class="col-md-4">
+                    <strong>Proportional Share</strong>
+                    <p class="small mb-0">Each worker gets at least 1/n of the total value (in their own view). This is the minimum fairness guarantee.</p>
+                </div>
+                <div class="col-md-4">
+                    <strong>Envy-Free (EF)</strong>
+                    <p class="small mb-0">No worker prefers another worker's assignment bundle. This is perfect fairness but often impossible to achieve.</p>
+                </div>
+                <div class="col-md-4">
+                    <strong>EF1 (Almost Envy-Free)</strong>
+                    <p class="small mb-0">After removing at most one shift from the envied bundle, envy disappears. This is a practical approximation of fairness.</p>
+                </div>
+            </div>
+            <hr>
+            <p class="small text-muted mb-0">
+                <strong>Note:</strong> These metrics use each worker's <em>individual</em> difficulty ratings, not the averaged ratings. 
+                This means fairness is calculated from each person's subjective perspective.
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Traditional Statistics Charts -->
+<div class="row mb-4">
+    <div class="col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-header"><h5>🌙 Night Shifts per Worker</h5></div>
+            <div class="card-body">
+                <canvas id="nightShiftsChart"></canvas>
             </div>
         </div>
     </div>
     <div class="col-lg-4">
-        <div class="card">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0">📊 Assignment Overview</h5>
+        <div class="card shadow-sm">
+            <div class="card-header"><h5>📅 Weekend Shifts per Worker</h5></div>
+            <div class="card-body">
+                <canvas id="weekendShiftsChart"></canvas>
             </div>
-            <div class="card-body text-center">
-                <div class="row">
-                    <div class="col-4">
-                        <h3 class="text-success">{{ stats.assigned_shifts }}</h3>
-                        <small>Assigned</small>
-                    </div>
-                    <div class="col-4">
-                        <h3 class="text-danger">{{ stats.unassigned_shifts }}</h3>
-                        <small>Unassigned</small>
-                    </div>
-                    <div class="col-4">
-                        <h3 class="text-primary">{{ stats.total_shifts }}</h3>
-                        <small>Total</small>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-header"><h5>⚡ Shifts by Difficulty</h5></div>
+            <div class="card-body">
+                <canvas id="difficultyDistributionChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Worker Role Distribution -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header"><h4>🎭 Individual Worker Role Distribution</h4></div>
+    <div class="card-body">
+        <div class="row">
+            {% for worker_stat in stats.worker_stats.values() %}
+                {% if worker_stat.total_shifts > 0 %}
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100 border-primary">
+                        <div class="card-header text-center bg-primary text-white">
+                            <strong>{{ worker_stat.name }}</strong>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="roleChart-{{ worker_stat.name | replace(' ', '-') }}"></canvas>
+                        </div>
                     </div>
                 </div>
-            </div>
+                {% endif %}
+            {% endfor %}
         </div>
     </div>
 </div>
 
-<!-- Worker Satisfaction & Fairness Detailed Charts -->
-<div class="row mb-4">
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>😊 Worker Satisfaction Scores</h5>
-                <small class="text-muted">Based on difficulty ratings vs. assigned work</small>
-            </div>
-            <div class="card-body">
-                <canvas id="satisfactionChart"></canvas>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>⚖️ Proportional Fairness</h5>
-                <small class="text-muted">Work allocation vs. qualifications</small>
-            </div>
-            <div class="card-body">
-                <canvas id="proportionalChart"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Envy Matrix Visualization -->
-<div class="row mb-4">
-    <div class="col-lg-12">
-        <div class="card">
-            <div class="card-header">
-                <h5>👀 Envy-Free Analysis Matrix</h5>
-                <small class="text-muted">How much each worker might prefer another's assignment (0 = no envy)</small>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm text-center">
-                        <thead class="thead-light">
-                            <tr>
-                                <th>Worker</th>
-                                {% for worker_name in stats.envy_metrics.envy_matrix.keys() %}
-                                    <th class="small">{{ worker_name }}</th>
-                                {% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for worker1, envy_row in stats.envy_metrics.envy_matrix.items() %}
-                            <tr>
-                                <td class="font-weight-bold">{{ worker1 }}</td>
-                                {% for worker2, envy_score in envy_row.items() %}
-                                    {% set envy_val = envy_score|default(0) %}
-                                    {% if envy_val == 0 %}
-                                        {% set cell_class = "bg-success text-white" %}
-                                    {% elif envy_val < 10 %}
-                                        {% set cell_class = "bg-warning" %}
-                                    {% else %}
-                                        {% set cell_class = "bg-danger text-white" %}
-                                    {% endif %}
-                                    <td class="{{ cell_class }}">
-                                        {{ "%.1f"|format(envy_val) }}
-                                    </td>
-                                {% endfor %}
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                <small class="text-muted">
-                    <span class="badge badge-success">0</span> No Envy
-                    <span class="badge badge-warning">1-9</span> Low Envy  
-                    <span class="badge badge-danger">10+</span> High Envy
-                </small>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Enhanced Worker Statistics Table -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h4>👥 Detailed Worker Fairness Analysis</h4>
-    </div>
+<!-- Worker Statistics Table -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header"><h4>📋 Worker Statistics (Detailed)</h4></div>
     <div class="card-body">
         <div class="table-responsive">
             <table class="table table-striped table-hover table-sm">
                 <thead class="thead-dark">
                     <tr>
                         <th>Worker</th>
+                        <th>Total Shifts</th>
                         <th>Total Hours</th>
-                        <th>Satisfaction</th>
-                        <th>Proportional Fair.</th>
-                        <th>Difficulty Burden</th>
                         <th>Night Shifts</th>
-                        <th>Min Rest (hrs)</th>
-                        <th>Continuous Work</th>
-                        <th>Qualified Roles</th>
+                        <th>Weekend Shifts</th>
+                        <th>Difficulty Distribution</th>
+                        <th>Downtime (Hours)</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for worker_stat in stats.worker_stats.values() %}
                     <tr>
                         <td><strong>{{ worker_stat.name }}</strong></td>
-                        <td>{{ "%.1f"|format(worker_stat.total_hours) }}</td>
+                        <td>{{ worker_stat.total_shifts }}</td>
+                        <td>{{ "%.2f"|format(worker_stat.total_hours) }}</td>
+                        <td>{{ worker_stat.night_shifts }}</td>
+                        <td>{{ worker_stat.weekend_shifts }}</td>
                         <td>
-                            {% set satisfaction_score = worker_stat.personal_satisfaction_score|default(50) %}
-                            {% set satisfaction_width = satisfaction_score|round(1) %}
-                            <div class="progress" style="width: 60px; height: 20px;">
-                                <div class="progress-bar 
-                                    {% if satisfaction_score >= 80 %}bg-success
-                                    {% elif satisfaction_score >= 60 %}bg-warning
-                                    {% else %}bg-danger{% endif %}
-                                    w-{{ satisfaction_width|int }}"></div>
-                            </div>
-                            <small>{{ "%.0f"|format(satisfaction_score) }}%</small>
+                            <span class="badge badge-success" title="Easy (1)">{{ worker_stat.difficulty_counts[1] }}</span>
+                            <span class="badge badge-info" title="Light (2)">{{ worker_stat.difficulty_counts[2] }}</span>
+                            <span class="badge badge-warning" title="Moderate (3)">{{ worker_stat.difficulty_counts[3] }}</span>
+                            <span class="badge badge-danger" title="Hard (4)">{{ worker_stat.difficulty_counts[4] }}</span>
+                            <span class="badge badge-dark" title="Very Hard (5)">{{ worker_stat.difficulty_counts[5] }}</span>
                         </td>
+                        <td>{{ "%.2f"|format(worker_stat.downtime_hours) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Job Role Statistics Table -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header"><h4>💼 Job Role Statistics</h4></div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover table-sm">
+                <thead class="thead-dark">
+                    <tr>
+                        <th>Job Role</th>
+                        <th>Total Shifts</th>
+                        <th>Total Hours</th>
+                        <th>Unique Workers</th>
+                        <th>Worker Distribution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for role_stat in stats.role_stats.values() %}
+                    <tr>
+                        <td><strong>{{ role_stat.name }}</strong></td>
+                        <td>{{ role_stat.total_shifts }}</td>
+                        <td>{{ "%.2f"|format(role_stat.total_hours) }}</td>
+                        <td>{{ role_stat.unique_workers }}</td>
                         <td>
-                            {% set proportional_score = worker_stat.get('proportional_fairness_score', 0) %}
-                            {% set proportional_width = proportional_score|round(1) %}
-                            <div class="progress" style="width: 60px; height: 20px;">
-                                <div class="progress-bar bg-info w-{{ proportional_width|int }}"></div>
-                            </div>
-                            <small>{{ "%.0f"|format(proportional_score) }}%</small>
-                        </td>
-                        <td>
-                            <span class="badge badge-pill 
-                                {% if worker_stat.weighted_difficulty_burden <= 10 %}badge-success
-                                {% elif worker_stat.weighted_difficulty_burden <= 25 %}badge-warning
-                                {% else %}badge-danger{% endif %}">
-                                {{ "%.1f"|format(worker_stat.weighted_difficulty_burden) }}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge badge-dark">{{ worker_stat.night_shifts }}</span>
-                            {% if stats.fairness_metrics.get('night_fairness_scores') and worker_stat.name|string in stats.fairness_metrics.night_fairness_scores %}
-                                {% set night_score = stats.fairness_metrics.night_fairness_scores[worker_stat.name|string] %}
-                                <small>({{ "%.0f"|format(night_score) }}%)</small>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if worker_stat.min_rest_time > 0 %}
-                                <span class="{% if worker_stat.min_rest_time < 8 %}text-danger{% else %}text-success{% endif %}">
-                                    {{ "%.1f"|format(worker_stat.min_rest_time) }}
-                                </span>
+                            {% for worker_name, count in role_stat.worker_distribution.items() %}
+                                <span class="badge badge-light">{{ worker_name }}: {{ count }}</span>
                             {% else %}
-                                <span class="text-muted">N/A</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if worker_stat.max_continuous_work > 0 %}
-                                <span class="{% if worker_stat.max_continuous_work > 12 %}text-danger{% else %}text-success{% endif %}">
-                                    {{ "%.1f"|format(worker_stat.max_continuous_work) }}h
-                                </span>
-                            {% else %}
-                                <span class="text-muted">N/A</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <span class="badge badge-light">{{ worker_stat.qualified_roles|length }}</span>
+                                <span class="text-muted">No assignments</span>
+                            {% endfor %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -264,11 +479,289 @@
     </div>
 </div>
 
-<!-- rest of your template stays the same -->
+<!-- Unassigned Shifts List -->
+{% if stats.unassigned_shifts_list %}
+<div class="card mb-4 shadow-sm border-danger">
+    <div class="card-header bg-danger text-white"><h4 class="mb-0">⚠️ Unassigned Shifts</h4></div>
+    <div class="card-body">
+        <ul class="list-group">
+            {% for shift in stats.unassigned_shifts_list %}
+                <li class="list-group-item">
+                    <strong>{{ shift.defined_slot.name }}</strong>: 
+                    {{ shift.defined_slot.slot_start_datetime.strftime('%a, %b %d, %Y %H:%M') }} to 
+                    {{ shift.defined_slot.slot_end_datetime.strftime('%H:%M') }} 
+                    ({{ shift.defined_slot.duration_hours_minutes_str }})
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<!-- your JS code unchanged -->
+
+<!-- Pass data from Jinja2 to JavaScript -->
+<!-- Pass data from Jinja2 to JavaScript -->
+<script id="chart-data" type="application/json">
+{{ chart_data|tojson }}
+</script>
+
+
+
+<script>
+(function() {
+    'use strict';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Parse JSON data from script tag
+        var dataElement = document.getElementById('chart-data');
+        var chartData = null;
+        
+        if (dataElement && dataElement.textContent) {
+            try {
+                chartData = JSON.parse(dataElement.textContent);
+            } catch (e) {
+                console.error('Error parsing chart data:', e);
+                return;
+            }
+        }
+        
+        if (!chartData) {
+            console.warn('No chart data available');
+            return;
+        }
+        
+        // Extract data safely
+        var statsData = chartData.stats || {};
+        var fairnessSummary = chartData.fairnessSummary || null;
+        var fairnessMetrics = chartData.fairnessMetrics || {};
+        
+        var workers = statsData.worker_stats ? Object.values(statsData.worker_stats) : [];
+        
+        // Set Chart.js defaults
+        if (typeof Chart !== 'undefined') {
+            Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+        }
+        
+        // Fairness Comparison Chart
+        if (fairnessSummary) {
+            var fairnessCanvas = document.getElementById('fairnessComparisonChart');
+            if (fairnessCanvas) {
+                new Chart(fairnessCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Proportional Share', 'Envy-Free (EF)', 'EF1 (Almost Envy-Free)'],
+                        datasets: [{
+                            label: 'Workers Satisfying Property',
+                            data: [
+                                fairnessSummary.proportional_count || 0,
+                                fairnessSummary.envy_free_count || 0,
+                                fairnessSummary.ef1_count || 0
+                            ],
+                            backgroundColor: [
+                                'rgba(40, 167, 69, 0.7)',
+                                'rgba(220, 53, 69, 0.7)',
+                                'rgba(23, 162, 184, 0.7)'
+                            ],
+                            borderColor: [
+                                'rgb(40, 167, 69)',
+                                'rgb(220, 53, 69)',
+                                'rgb(23, 162, 184)'
+                            ],
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: fairnessSummary.total_workers || undefined,
+                                ticks: { stepSize: 1 },
+                                title: { display: true, text: 'Number of Workers' }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        var total = fairnessSummary.total_workers || 0;
+                                        var value = context.parsed.y || 0;
+                                        var percent = total ? Math.round((value / total) * 100) : 0;
+                                        return value + '/' + total + ' workers (' + percent + '%)';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // Individual Worker Fairness Charts
+        if (fairnessMetrics && typeof fairnessMetrics === 'object') {
+            Object.keys(fairnessMetrics).forEach(function(workerId) {
+                var metrics = fairnessMetrics[workerId];
+                if (!metrics || (metrics.my_weighted_hours || 0) <= 0) return;
+                
+                var canvas = document.getElementById('workerChart' + workerId);
+                if (!canvas) return;
+                
+                var barColor = metrics.is_proportional ? 'rgba(40, 167, 69, 0.7)' : 'rgba(255, 193, 7, 0.7)';
+                var barBorder = metrics.is_proportional ? 'rgb(40, 167, 69)' : 'rgb(255, 193, 7)';
+                
+                new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels: ['My Weighted Hours', 'Fair Share (1/n)'],
+                        datasets: [{
+                            data: [metrics.my_weighted_hours || 0, metrics.fair_share || 0],
+                            backgroundColor: [barColor, 'rgba(108, 117, 125, 0.7)'],
+                            borderColor: [barBorder, 'rgb(108, 117, 125)'],
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Weighted Hours' }
+                            }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            });
+        }
+        
+        // Night Shifts Chart
+        var nightShiftsCanvas = document.getElementById('nightShiftsChart');
+        if (nightShiftsCanvas && workers.length > 0) {
+            new Chart(nightShiftsCanvas, {
+                type: 'bar',
+                data: {
+                    labels: workers.map(function(w) { return w.name; }),
+                    datasets: [{
+                        label: 'Night Shifts',
+                        data: workers.map(function(w) { return w.night_shifts; }),
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgb(54, 162, 235)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+        
+        // Weekend Shifts Chart
+        var weekendShiftsCanvas = document.getElementById('weekendShiftsChart');
+        if (weekendShiftsCanvas && workers.length > 0) {
+            new Chart(weekendShiftsCanvas, {
+                type: 'bar',
+                data: {
+                    labels: workers.map(function(w) { return w.name; }),
+                    datasets: [{
+                        label: 'Weekend Shifts',
+                        data: workers.map(function(w) { return w.weekend_shifts; }),
+                        backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                        borderColor: 'rgb(75, 192, 192)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+        
+        // Difficulty Distribution Chart
+        var difficultyCanvas = document.getElementById('difficultyDistributionChart');
+        if (difficultyCanvas && workers.length > 0) {
+            var difficultyLevels = [
+                { l: 'Easy (1)', c: 'rgba(40, 167, 69, 0.7)', k: 1 },
+                { l: 'Light (2)', c: 'rgba(23, 162, 184, 0.7)', k: 2 },
+                { l: 'Moderate (3)', c: 'rgba(255, 193, 7, 0.7)', k: 3 },
+                { l: 'Hard (4)', c: 'rgba(220, 53, 69, 0.7)', k: 4 },
+                { l: 'V.Hard (5)', c: 'rgba(52, 58, 64, 0.7)', k: 5 }
+            ];
+            var datasets = difficultyLevels.map(function(level) {
+                return {
+                    label: level.l,
+                    data: workers.map(function(w) {
+                        return (w.difficulty_counts && w.difficulty_counts[level.k]) ? w.difficulty_counts[level.k] : 0;
+                    }),
+                    backgroundColor: level.c
+                };
+            });
+            new Chart(difficultyCanvas, {
+                type: 'bar',
+                data: { labels: workers.map(function(w) { return w.name; }), datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
+                }
+            });
+        }
+        
+        // Individual Worker Role Distribution Charts
+        workers.forEach(function(worker) {
+            if (worker.total_shifts > 0) {
+                var canvasId = 'roleChart-' + worker.name.replace(/ /g, '-');
+                var roleCanvas = document.getElementById(canvasId);
+                if (roleCanvas) {
+                    var roleLabels = Object.keys(worker.role_distribution || {});
+                    var roleData = Object.values(worker.role_distribution || {});
+                    new Chart(roleCanvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: roleLabels,
+                            datasets: [{
+                                data: roleData,
+                                backgroundColor: [
+                                    '#28a745', '#17a2b8', '#ffc107', '#dc3545',
+                                    '#6c757d', '#007bff', '#6f42c1', '#fd7e14'
+                                ]
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                    labels: { boxWidth: 12, font: { size: 10 } }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    });
+})();
+</script>
 {% endblock %}
