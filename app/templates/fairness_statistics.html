@@ -9,6 +9,9 @@
         <small class="text-muted">({{ period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ period.period_end_datetime.strftime('%b %d, %Y %H:%M') }})</small>
     </div>
     <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">Back to Dashboard</a>
+    <button onclick="window.print()" class="btn btn-success">
+    📄 Save as PDF (Print)
+</button>
 </div>
 
 <!-- Overall Statistics -->
