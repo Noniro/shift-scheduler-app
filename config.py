@@ -11,3 +11,4 @@ class Config:
         'sqlite:///' + os.path.join(BASE_DIR, 'app.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     PERMANENT_SESSION_LIFETIME = os.environ.get('PERMANENT_SESSION_LIFETIME') or 30 * 24 * 60 * 60 # 30 days in seconds
+    DIFFICULTY_ALPHA = float(os.environ.get('DIFFICULTY_ALPHA') or 0.5)
