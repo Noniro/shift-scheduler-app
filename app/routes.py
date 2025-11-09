@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, jsonify, flash, current_app, session, make_response
 from . import db
-from .models import SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift, User
+from .models import SchedulingPeriod, JobRole, ShiftDefinition, Worker, Constraint, ScheduledShift, WorkerRoleRating, User
 from datetime import datetime, time, timedelta, date
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy.orm import joinedload, selectinload # For eager loading
@@ -9,8 +9,10 @@ from sqlalchemy.orm import joinedload, selectinload # For eager loading
 import csv
 import io
 import pandas as pd
+import random
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import json
 
 # Option 1 - copilot 
 """
@@ -114,7 +116,24 @@ def get_active_period():
     return None
 
 
-    # Adding time restriction for job roles
+#     # Adding time restriction for job roles
+# def is_time_within_role_restrictions(check_time, role):
+#     """Check if a given time falls within the role's working hours"""
+#     if not role.has_time_restrictions():
+#         return True  # No restrictions means all times are valid
+    
+#     check_time_only = check_time.time()
+    
+#     if role.is_overnight_shift:
+#         # For overnight shifts (e.g., 22:00 - 06:00)
+#         # Valid if time >= start_time OR time <= end_time
+#         return check_time_only >= role.work_start_time or check_time_only <= role.work_end_time
+#     else:
+#         # For same-day shifts (e.g., 09:00 - 17:00)
+#         # Valid if start_time <= time <= end_time
+#         return role.work_start_time <= check_time_only <= role.work_end_time
+
+
 def is_time_within_role_restrictions(check_time, role):
     """Check if a given time falls within the role's working hours"""
     if not role.has_time_restrictions():
@@ -124,12 +143,13 @@ def is_time_within_role_restrictions(check_time, role):
     
     if role.is_overnight_shift:
         # For overnight shifts (e.g., 22:00 - 06:00)
-        # Valid if time >= start_time OR time <= end_time
-        return check_time_only >= role.work_start_time or check_time_only <= role.work_end_time
+        # Valid if time >= start_time OR time < end_time (not <=)
+        return check_time_only >= role.work_start_time or check_time_only < role.work_end_time
     else:
         # For same-day shifts (e.g., 09:00 - 17:00)
-        # Valid if start_time <= time <= end_time
-        return role.work_start_time <= check_time_only <= role.work_end_time
+        # Valid if start_time <= time < end_time (not <= for end)
+        return role.work_start_time <= check_time_only < role.work_end_time
+
 
 # --- User Name Routes ---
 @main_bp.route('/', methods=['GET', 'POST'])
@@ -273,42 +293,142 @@ def delete_period(period_id):
     flash(f"Period '{period_to_delete.name}' and all its associated data deleted.", "success")
     return redirect(url_for('main.manage_periods'))
 
-# --- Job Role and Slot Generation Routes ---
+# # --- Job Role and Slot Generation Routes ---
+# @main_bp.route('/period/<int:period_id>/roles', methods=['GET', 'POST'])
+# def manage_job_roles_for_period(period_id):
+#     period = SchedulingPeriod.query.get_or_404(period_id)
+#     if session.get('active_period_id') != period_id:
+#         session['active_period_id'] = period_id; session.permanent = True
+#         flash(f"Active period set to '{period.name}'.", "info")
+    
+#     if request.method == 'POST':
+#         try:
+#             role_name = request.form.get('role_name')
+#             number_needed_str = request.form.get('number_needed', '1')
+#             days_str = request.form.get('duration_days', '0')
+#             hours_str = request.form.get('duration_hours', '0')
+#             minutes_str = request.form.get('duration_minutes', '0')
+            
+#             # UPDATED: Handle the new 1-5 difficulty range
+#             difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1')
+
+#             # Time constraint fields
+#             has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
+#             work_start_time_str = request.form.get('work_start_time')
+#             work_end_time_str = request.form.get('work_end_time')
+#             is_overnight_shift = request.form.get('is_overnight_shift') == 'on'
+            
+#             if not role_name or not role_name.strip(): 
+#                 flash("Job role name is required.", "danger")
+#             else:
+#                 role_name = role_name.strip()
+#                 number_needed = int(number_needed_str)
+#                 days = int(days_str)
+#                 hours = int(hours_str) 
+#                 minutes = int(minutes_str)
+
+#                 # UPDATED: Convert multiplier to int and validate range 1-5
+#                 difficulty_multiplier = int(difficulty_multiplier_str)
+#                 if difficulty_multiplier < 1 or difficulty_multiplier > 5:
+#                     flash("Difficulty level must be between 1 and 5.", "danger")
+#                     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                
+#                 if number_needed < 1: 
+#                     flash("Number needed must be at least 1.", "danger")
+#                 else:
+#                     total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
+#                     if total_duration_minutes < 20: 
+#                         flash("Minimum shift duration for a role is 20 minutes.", "danger")
+#                     elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: 
+#                         flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+#                     elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): 
+#                         flash(f"Job role '{role_name}' already exists for this period.", "warning")
+#                     else:
+#                         # Parse time constraints if provided
+#                         work_start_time = None
+#                         work_end_time = None
+                        
+#                         if has_time_restrictions:
+#                             if not work_start_time_str or not work_end_time_str:
+#                                 flash("Both start and end times are required when restricting working hours.", "danger")
+#                                 return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                            
+#                             try:
+#                                 work_start_time = datetime.strptime(work_start_time_str, '%H:%M').time()
+#                                 work_end_time = datetime.strptime(work_end_time_str, '%H:%M').time()
+                                
+#                                 # Validate time logic
+#                                 if not is_overnight_shift and work_end_time <= work_start_time:
+#                                     flash("End time must be after start time for same-day shifts.", "danger")
+#                                     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+#                                 elif is_overnight_shift and work_end_time >= work_start_time:
+#                                     flash("For overnight shifts, end time should be earlier than start time (next day).", "warning")
+                                    
+#                             except ValueError:
+#                                 flash("Invalid time format. Please use HH:MM format.", "danger")
+#                                 return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+                        
+#                         new_role = JobRole(
+#                             name=role_name, 
+#                             number_needed=number_needed, 
+#                             shift_duration_days=days, 
+#                             shift_duration_hours=hours, 
+#                             shift_duration_minutes=minutes,
+#                             difficulty_multiplier=float(difficulty_multiplier), # Convert to float for database
+#                             scheduling_period_id=period.id,
+#                             work_start_time=work_start_time,
+#                             work_end_time=work_end_time,
+#                             is_overnight_shift=is_overnight_shift
+#                         )
+#                         db.session.add(new_role)
+#                         db.session.commit()
+                        
+#                         time_info = ""
+#                         if has_time_restrictions:
+#                             time_info = f" (Working hours: {work_start_time_str} - {work_end_time_str}{'next day' if is_overnight_shift else ''})"
+                        
+#                         difficulty_labels = {1: "Easy/Regular", 2: "Light", 3: "Moderate", 4: "Hard", 5: "Very Hard"}
+#                         flash(f"Job Role '{role_name}' added with difficulty level {difficulty_multiplier} ({difficulty_labels[difficulty_multiplier]}).{time_info}", "success")
+                        
+#         except ValueError: 
+#             flash("Invalid number for 'Needed', 'Duration' or 'Difficulty' fields.", "danger")
+#         except Exception as e: 
+#             db.session.rollback()
+#             flash(f"Error adding job role: {e}", "danger")
+#             current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
+#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+
+
+#     job_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
+#     generated_slots = ShiftDefinition.query.options(joinedload(ShiftDefinition.job_role))\
+#                                            .filter_by(scheduling_period_id=period.id)\
+#                                            .order_by(ShiftDefinition.job_role_id, ShiftDefinition.instance_number, ShiftDefinition.slot_start_datetime).all()
+#     has_generated_slots = bool(generated_slots)
+#     workers_exist = Worker.query.first() is not None
+#     can_assign = workers_exist and job_roles
+
+#     # ---- RETRIEVE DETAILED MESSAGES FROM SESSION ----
+#     assignment_details = session.pop('assignment_details', None) # Get and remove from session
+#     # ---- END OF RETRIEVAL ----
+
+#     return render_template('manage_job_roles.html', 
+#                            period=period, 
+#                            job_roles=job_roles, 
+#                            generated_slots=generated_slots,
+#                            has_generated_slots=has_generated_slots,
+#                            can_assign=can_assign,
+#                            workers_exist=workers_exist,
+#                            assignment_details=assignment_details) # Pass to template
+
+
+
 @main_bp.route('/period/<int:period_id>/roles', methods=['GET', 'POST'])
 def manage_job_roles_for_period(period_id):
     period = SchedulingPeriod.query.get_or_404(period_id)
     if session.get('active_period_id') != period_id:
         session['active_period_id'] = period_id; session.permanent = True
         flash(f"Active period set to '{period.name}'.", "info")
-
-    # if request.method == 'POST':
-    #     # ... (POST logic for adding a job role - REMAINS THE SAME) ...
-    #     try:
-    #         role_name = request.form.get('role_name')
-    #         number_needed_str = request.form.get('number_needed', '1')
-    #         days_str = request.form.get('duration_days', '0')
-    #         hours_str = request.form.get('duration_hours', '0')
-    #         minutes_str = request.form.get('duration_minutes', '0')
-    #         if not role_name or not role_name.strip(): flash("Job role name is required.", "danger")
-    #         else:
-    #             role_name = role_name.strip(); number_needed = int(number_needed_str)
-    #             days = int(days_str); hours = int(hours_str); minutes = int(minutes_str)
-    #             if number_needed < 1: flash("Number needed must be at least 1.", "danger")
-    #             else:
-    #                 total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
-    #                 if total_duration_minutes < 20: flash("Minimum shift duration for a role is 20 minutes.", "danger")
-    #                 elif days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60: flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
-    #                 elif JobRole.query.filter_by(scheduling_period_id=period.id, name=role_name).first(): flash(f"Job role '{role_name}' already exists for this period.", "warning")
-    #                 else:
-    #                     new_role = JobRole(name=role_name, number_needed=number_needed, shift_duration_days=days, shift_duration_hours=hours, shift_duration_minutes=minutes, scheduling_period_id=period.id)
-    #                     db.session.add(new_role); db.session.commit(); flash(f"Job Role '{role_name}' added to period '{period.name}'.", "success")
-    #     except ValueError: flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
-    #     except Exception as e: db.session.rollback(); flash(f"Error adding job role: {e}", "danger"); current_app.logger.error(f"Error adding job role for period {period.id}: {e}\n{request.form}")
-    #     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
     
-    # Update your job role creation logic in routes.py
-    # Find the manage_job_roles_for_period POST section and replace it with this:
-
     if request.method == 'POST':
         try:
             role_name = request.form.get('role_name')
@@ -317,8 +437,7 @@ def manage_job_roles_for_period(period_id):
             hours_str = request.form.get('duration_hours', '0')
             minutes_str = request.form.get('duration_minutes', '0')
             
-            # GET the new multiplier value
-            difficulty_multiplier_str = request.form.get('difficulty_multiplier', '1.0')
+            # REMOVED: Difficulty multiplier processing
 
             # Time constraint fields
             has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
@@ -335,8 +454,7 @@ def manage_job_roles_for_period(period_id):
                 hours = int(hours_str) 
                 minutes = int(minutes_str)
 
-                # CONVERT multiplier to float
-                difficulty_multiplier = float(difficulty_multiplier_str)
+                # REMOVED: Difficulty multiplier validation
                 
                 if number_needed < 1: 
                     flash("Number needed must be at least 1.", "danger")
@@ -379,7 +497,7 @@ def manage_job_roles_for_period(period_id):
                             shift_duration_days=days, 
                             shift_duration_hours=hours, 
                             shift_duration_minutes=minutes,
-                            difficulty_multiplier=difficulty_multiplier, # ADD to object creation
+                            difficulty_multiplier=1.0, # SET DEFAULT VALUE
                             scheduling_period_id=period.id,
                             work_start_time=work_start_time,
                             work_end_time=work_end_time,
@@ -392,10 +510,12 @@ def manage_job_roles_for_period(period_id):
                         if has_time_restrictions:
                             time_info = f" (Working hours: {work_start_time_str} - {work_end_time_str}{'next day' if is_overnight_shift else ''})"
                         
-                        flash(f"Job Role '{role_name}' added to period '{period.name}'.{time_info}", "success")
+                        # UPDATED: Removed difficulty reference from success message
+                        flash(f"Job Role '{role_name}' added successfully.{time_info}", "success")
                         
         except ValueError: 
-            flash("Invalid number for 'Needed' , 'Duration' or 'Multiplier' fields.", "danger")
+            # UPDATED: Removed 'Difficulty' from error message
+            flash("Invalid number for 'Needed' or 'Duration' fields.", "danger")
         except Exception as e: 
             db.session.rollback()
             flash(f"Error adding job role: {e}", "danger")
@@ -426,6 +546,8 @@ def manage_job_roles_for_period(period_id):
 
 
 
+
+
 @main_bp.route('/period/<int:period_id>/role/<int:role_id>/delete', methods=['POST'])
 def delete_job_role(period_id, role_id):
     role = JobRole.query.filter_by(id=role_id, scheduling_period_id=period_id).first_or_404()
@@ -434,191 +556,106 @@ def delete_job_role(period_id, role_id):
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
 
 
-# @main_bp.route('/period/<int:period_id>/generate_slots', methods=['POST'])
-# def generate_coverage_slots_for_period(period_id):
-#     period = SchedulingPeriod.query.get_or_404(period_id)
-#     job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
 
-#     if not job_roles_for_period:
-#         flash("No job roles defined for this period. Cannot generate coverage slots.", "warning")
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-
-#     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
-#                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
-#     if ids_to_delete_assignments:
-#         ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
-#     ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
-#     db.session.commit()
-
-#     total_new_slots_generated = 0
-#     for role in job_roles_for_period:
-#         role_slots_generated = 0
-#         current_dt_for_role = period.period_start_datetime
-#         duration = role.get_duration_timedelta()
-
-#         if duration.total_seconds() <= 0:
-#             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration."); continue
-
-#         max_iter = 5000; iter_count = 0 
-#         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
-#             iter_count += 1
-#             slot_start = current_dt_for_role
-#             slot_end = current_dt_for_role + duration
-#             if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
-            
-#             if slot_start < slot_end:
-#                 for i in range(1, role.number_needed + 1):
-#                     new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
-#                                                instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
-#                     db.session.add(new_slot)
-#                     role_slots_generated +=1
-#             current_dt_for_role = slot_end
-#             if current_dt_for_role >= period.period_end_datetime: break
-#         if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}'.", "warning")
-#         total_new_slots_generated += role_slots_generated
-
-#     if total_new_slots_generated > 0:
-#         try:
-#             db.session.commit(); flash(f"{total_new_slots_generated} slots generated for '{period.name}'.", "success")
-#         except Exception as e:
-#             db.session.rollback(); flash(f"Error committing slots: {e}", "danger")
-#             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
-#     else:
-#         flash("No new slots generated. Check role durations.", "warning")
-#     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-
-@main_bp.route('/period/<int:period_id>/generate_slots', methods=['POST'])
-def generate_coverage_slots_for_period(period_id):
+@main_bp.route('/period/<int:period_id>/role/<int:role_id>/edit', methods=['GET', 'POST'])
+def edit_job_role(period_id, role_id):
+    """Edit an existing job role for a scheduling period"""
     period = SchedulingPeriod.query.get_or_404(period_id)
-    job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
+    role = JobRole.query.filter_by(id=role_id, scheduling_period_id=period_id).first_or_404()
 
-    if not job_roles_for_period:
-        flash("No job roles defined for this period. Cannot generate coverage slots.", "warning")
-        return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-
-    ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
-                               .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
-    if ids_to_delete_assignments:
-        ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
-    ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
-    db.session.commit()
-
-    total_new_slots_generated = 0
-    for role in job_roles_for_period:
-        role_slots_generated = 0
-        current_dt_for_role = period.period_start_datetime
-        duration = role.get_duration_timedelta()
-
-        if duration.total_seconds() <= 0:
-            current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration.")
-            continue
-
-        max_iter = 5000
-        iter_count = 0 
-        
-        while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
-            iter_count += 1
-            
-            # Check if current time is within role's working hours
-            if role.has_time_restrictions():
-                if not is_time_within_role_restrictions(current_dt_for_role, role):
-                    # Move to next valid time slot
-                    if role.is_overnight_shift:
-                        # For overnight shifts, find next start time
-                        next_start = current_dt_for_role.replace(
-                            hour=role.work_start_time.hour, 
-                            minute=role.work_start_time.minute, 
-                            second=0, 
-                            microsecond=0
-                        )
-                        if next_start <= current_dt_for_role:
-                            next_start += timedelta(days=1)
-                        current_dt_for_role = next_start
-                    else:
-                        # For day shifts, find next start time
-                        next_start = current_dt_for_role.replace(
-                            hour=role.work_start_time.hour, 
-                            minute=role.work_start_time.minute, 
-                            second=0, 
-                            microsecond=0
-                        )
-                        if next_start <= current_dt_for_role:
-                            next_start += timedelta(days=1)
-                        current_dt_for_role = next_start
-                    continue
-            
-            slot_start = current_dt_for_role
-            slot_end = current_dt_for_role + duration
-            
-            # For time-restricted roles, ensure slot doesn't exceed working hours
-            if role.has_time_restrictions():
-                if role.is_overnight_shift:
-                    # For overnight shifts, check if slot end goes beyond end time (next day)
-                    next_day_end = (slot_start.replace(
-                        hour=role.work_end_time.hour, 
-                        minute=role.work_end_time.minute, 
-                        second=0, 
-                        microsecond=0
-                    ) + timedelta(days=1))
-                    
-                    if slot_end > next_day_end:
-                        slot_end = next_day_end
-                else:
-                    # For day shifts, check if slot end goes beyond end time (same day)
-                    same_day_end = slot_start.replace(
-                        hour=role.work_end_time.hour, 
-                        minute=role.work_end_time.minute, 
-                        second=0, 
-                        microsecond=0
-                    )
-                    
-                    if slot_end > same_day_end:
-                        slot_end = same_day_end
-            
-            # Ensure slot doesn't exceed period end
-            if slot_end > period.period_end_datetime:
-                slot_end = period.period_end_datetime
-            
-            if slot_start < slot_end:
-                for i in range(1, role.number_needed + 1):
-                    new_slot = ShiftDefinition(
-                        slot_start_datetime=slot_start, 
-                        slot_end_datetime=slot_end,
-                        instance_number=i, 
-                        scheduling_period_id=period.id, 
-                        job_role_id=role.id
-                    )
-                    db.session.add(new_slot)
-                    role_slots_generated += 1
-            
-            # Move to next slot time
-            current_dt_for_role = slot_end
-            
-            if current_dt_for_role >= period.period_end_datetime:
-                break
-                
-        if iter_count >= max_iter: 
-            flash(f"Max iterations for role '{role.name}'.", "warning")
-        
-        total_new_slots_generated += role_slots_generated
-        
-        # Log information about what was generated
-        if role.has_time_restrictions():
-            current_app.logger.info(f"Generated {role_slots_generated} time-restricted slots for role '{role.name}' ({role.get_working_hours_str()})")
-        else:
-            current_app.logger.info(f"Generated {role_slots_generated} all-day slots for role '{role.name}'")
-
-    if total_new_slots_generated > 0:
+    if request.method == 'POST':
         try:
+            role_name = request.form.get('role_name')
+            number_needed_str = request.form.get('number_needed', '1')
+            days_str = request.form.get('duration_days', '0')
+            hours_str = request.form.get('duration_hours', '0')
+            minutes_str = request.form.get('duration_minutes', '0')
+            
+            # REMOVED: Difficulty multiplier processing
+
+            has_time_restrictions = request.form.get('has_time_restrictions') == 'on'
+            work_start_time_str = request.form.get('work_start_time')
+            work_end_time_str = request.form.get('work_end_time')
+            is_overnight_shift = request.form.get('is_overnight_shift') == 'on'
+
+            if not role_name or not role_name.strip():
+                flash("Job role name is required.", "danger")
+                return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+            role_name = role_name.strip()
+            number_needed = int(number_needed_str)
+            days = int(days_str)
+            hours = int(hours_str)
+            minutes = int(minutes_str)
+            
+            # REMOVED: Difficulty multiplier validation
+
+            if number_needed < 1:
+                flash("Number needed must be at least 1.", "danger")
+                return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+            total_duration_minutes = (days * 24 * 60) + (hours * 60) + minutes
+            if total_duration_minutes < 20:
+                flash("Minimum shift duration for a role is 20 minutes.", "danger")
+                return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+            if days < 0 or hours < 0 or minutes < 0 or hours >= 24 or minutes >= 60:
+                flash("Invalid duration values (e.g., hours 0-23, minutes 0-59).", "danger")
+                return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+            # Check if another role with same name exists in this period
+            existing_role = JobRole.query.filter(
+                JobRole.scheduling_period_id == period_id,
+                JobRole.name.ilike(role_name),
+                JobRole.id != role_id
+            ).first()
+            if existing_role:
+                flash(f"Job role '{role_name}' already exists for this period.", "danger")
+                return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+            work_start_time = None
+            work_end_time = None
+            if has_time_restrictions:
+                if not work_start_time_str or not work_end_time_str:
+                    flash("Both start and end times are required when restricting working hours.", "danger")
+                    return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+                try:
+                    work_start_time = datetime.strptime(work_start_time_str, '%H:%M').time()
+                    work_end_time = datetime.strptime(work_end_time_str, '%H:%M').time()
+                    if not is_overnight_shift and work_end_time <= work_start_time:
+                        flash("End time must be after start time for same-day shifts.", "danger")
+                        return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+                    elif is_overnight_shift and work_end_time >= work_start_time:
+                        flash("For overnight shifts, end time should be earlier than start time (next day).", "warning")
+                except ValueError:
+                    flash("Invalid time format. Please use HH:MM format.", "danger")
+                    return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+            # Update role
+            role.name = role_name
+            role.number_needed = number_needed
+            role.shift_duration_days = days
+            role.shift_duration_hours = hours
+            role.shift_duration_minutes = minutes
+            # REMOVED: difficulty_multiplier update (keep existing value)
+            role.work_start_time = work_start_time
+            role.work_end_time = work_end_time
+            role.is_overnight_shift = is_overnight_shift if has_time_restrictions else False
+
             db.session.commit()
-            flash(f"{total_new_slots_generated} slots generated for '{period.name}'.", "success")
+            # UPDATED: Removed difficulty reference from success message
+            flash(f"Job Role '{role.name}' updated successfully.", "success")
+            return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+
         except Exception as e:
             db.session.rollback()
-            flash(f"Error committing slots: {e}", "danger")
-            current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
-    else:
-        flash("No new slots generated. Check role durations.", "warning")
-    return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+            flash(f"Error updating job role: {e}", "danger")
+            current_app.logger.error(f"Error updating job role {role_id} for period {period_id}: {e}\n{request.form}")
+            return redirect(url_for('main.edit_job_role', period_id=period_id, role_id=role_id))
+
+    # GET request
+    return render_template('edit_job_role.html', period=period, role=role)
+
+
 
 # --- Worker and Constraint Routes ---
 @main_bp.route('/manage_workers', methods=['GET', 'POST'])
@@ -813,155 +850,44 @@ def delete_constraint(constraint_id):
     flash(f'Constraint deleted for {worker_name}: {constraint_desc}', 'info')
     return redirect(url_for('main.manage_workers'))
 
-# @main_bp.route('/worker/<int:worker_id>/add_constraint', methods=['POST'])
-# def add_constraint(worker_id):
-#     worker = Worker.query.get_or_404(worker_id)
-#     target_redirect = request.form.get('redirect_to', url_for('main.manage_workers'))
-#     try:
-#         start_date_str = request.form.get('constraint_start_date'); end_date_str = request.form.get('constraint_end_date')
-#         if not start_date_str or not end_date_str:
-#             flash("Both start and end dates for unavailability are required.", "danger"); return redirect(target_redirect)
-#         start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-#         end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-#         if end_date_obj < start_date_obj:
-#             flash("End date cannot be before start date.", "danger"); return redirect(target_redirect)
-#         cs_dt = datetime.combine(start_date_obj, time.min); ce_dt = datetime.combine(end_date_obj, time.max)
-#         constraint = Constraint(worker_id=worker.id, constraint_type="UNAVAILABLE_DAY_RANGE", start_datetime=cs_dt, end_datetime=ce_dt)
-#         db.session.add(constraint); db.session.commit()
-#         flash(f'Unavailability added for {worker.name}.', 'success')
-#     except ValueError: flash("Invalid date format for unavailability.", "danger")
-#     except Exception as e:
-#         db.session.rollback(); flash(f'Error adding constraint: {e}', 'danger')
-#         current_app.logger.error(f"Error in add_constraint for worker {worker_id}: {e}\n{request.form}")
-#     return redirect(target_redirect)
+# Assignments and Slot Generation Routes according to the algorithm
 
 
-# @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
-# def generate_slots_and_assign_action(period_id):
-#     period = SchedulingPeriod.query.get_or_404(period_id)
-#     current_app.logger.info(f"Clearing old data for period {period.id} ('{period.name}')")
-#     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
-#                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
-#     if ids_to_delete_assignments:
-#         ScheduledShift.query.filter(ScheduledShift.id.in_(ids_to_delete_assignments)).delete(synchronize_session=False)
-#     ShiftDefinition.query.filter_by(scheduling_period_id=period.id).delete()
-#     db.session.commit()
-#     current_app.logger.info(f"Old data cleared for period {period.id}.")
 
-#     job_roles_for_period = JobRole.query.filter_by(scheduling_period_id=period.id).all()
-#     if not job_roles_for_period:
-#         flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-#     total_new_slots_generated = 0
-#     generated_slot_objects = []
-#     for role in job_roles_for_period:
-#         role_slots_generated_this_role = 0
-#         current_dt_for_role = period.period_start_datetime
-#         duration = role.get_duration_timedelta()
-#         if duration.total_seconds() <= 0:
-#             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration for period {period.id}.")
-#             flash(f"Job Role '{role.name}' has zero/negative shift duration and was skipped for slot generation.", "warning")
-#             continue
-#         max_iter = 5000; iter_count = 0
-#         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
-#             iter_count += 1; slot_start = current_dt_for_role; slot_end = current_dt_for_role + duration
-#             if slot_end > period.period_end_datetime: slot_end = period.period_end_datetime
-#             if slot_start < slot_end:
-#                 for i in range(1, role.number_needed + 1):
-#                     new_slot = ShiftDefinition(slot_start_datetime=slot_start, slot_end_datetime=slot_end,
-#                                                instance_number=i, scheduling_period_id=period.id, job_role_id=role.id)
-#                     db.session.add(new_slot); generated_slot_objects.append(new_slot); role_slots_generated_this_role +=1
-#             current_dt_for_role = slot_end
-#             if current_dt_for_role >= period.period_end_datetime: break
-#         if iter_count >= max_iter: flash(f"Max iterations for role '{role.name}' during slot generation.", "warning")
-#         total_new_slots_generated += role_slots_generated_this_role
-#     if total_new_slots_generated > 0:
-#         try:
-#             db.session.commit(); flash(f"{total_new_slots_generated} coverage slots generated for '{period.name}'. Attempting assignment...", "info")
-#             current_app.logger.info(f"{total_new_slots_generated} ShiftDefinition slots committed for period {period.id}.")
-#         except Exception as e:
-#             db.session.rollback(); flash(f"Error committing generated slots: {e}", "danger")
-#             current_app.logger.error(f"Error committing slots for period {period.id}: {e}")
-#             return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
-#     else:
-#         flash("No new coverage slots were generated. Check role durations. No assignments will be made.", "warning")
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-#     # --- Step 3: Prepare for and run assignment algorithm ---
-#     workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
-#     if not workers:
-#         flash("No workers found. Slots generated, but assignments cannot proceed.", "warning")
-#         # Store this message to be displayed on the next page, maybe in session for one request
-#         session['assignment_details'] = [("warning", "No workers found in the system to perform assignments.")]
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-#     assignments_to_make = []
-#     for slot_def in generated_slot_objects:
-#         if slot_def.id is None: continue
-#         assignments_to_make.append(ScheduledShift(shift_definition_id=slot_def.id))
-#     if assignments_to_make:
-#         db.session.add_all(assignments_to_make); db.session.commit()
-#         current_app.logger.info(f"{len(assignments_to_make)} ScheduledShift placeholders created for period {period.id}.")
-#     else:
-#         flash("No assignment placeholders created, though slots generated. Unexpected error.", "danger")
-#         current_app.logger.error(f"Failed to create ScheduledShift placeholders for period {period.id} despite {total_new_slots_generated} slots.")
-#         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-#     from .algorithm import assign_shifts_fairly
-#     all_pending_assignments = ScheduledShift.query.options(
-#             joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role)
-#         ).join(ShiftDefinition)\
-#         .filter(ShiftDefinition.scheduling_period_id == period.id, ScheduledShift.worker_id.is_(None))\
-#         .all()
-    
-#     current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
-#     assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
-    
-#     # ---- MODIFIED MESSAGE HANDLING ----
-#     # Store detailed messages in session to be picked up by the next request (the redirect)
-#     # This is a common pattern for Post/Redirect/Get with complex feedback.
-#     detailed_assignment_warnings = []
-#     error_count = 0
-#     warning_summary_count = 0 # Count for summary message
 
-#     for msg_type, msg_text in algo_messages_raw:
-#         if msg_type == "error":
-#             error_count += 1
-#             current_app.logger.error(f"Algo Error: {msg_text}")
-#             # Flash critical errors immediately
-#             flash(f"Critical Algorithm Error: {msg_text}", "danger")
-#         elif msg_type == "warning": # Typically "Could not assign..."
-#             warning_summary_count +=1
-#             detailed_assignment_warnings.append(msg_text) # Collect for detailed display
-#             current_app.logger.warning(f"Algo Warning: {msg_text}")
-#         elif msg_type == "success":
-#             flash(msg_text, "success")
-#         else: # info or other types
-#             flash(msg_text, msg_type)
-    
-#     session['assignment_details'] = detailed_assignment_warnings # Store details in session
 
-#     if error_count > 0:
-#         flash(f"{error_count} critical errors occurred during assignment. Check server logs.", "danger")
-    
-#     if warning_summary_count > 0:
-#         flash(f"Assignment complete: {warning_summary_count} slots could not be filled. See details below or check server logs.", "warning")
-    
-#     if assignment_successful and error_count == 0 and warning_summary_count == 0:
-#         flash("All shifts assigned successfully!", "success")
-#     elif not assignment_successful and error_count == 0 and warning_summary_count == 0:
-#         flash("Shift assignment process completed, but the algorithm reported not all shifts filled (no specific warnings).", "warning")
-#     elif total_new_slots_generated > 0 and not all_pending_assignments and (error_count > 0 or warning_summary_count > 0):
-#         flash("Slots were generated, but assignment step encountered issues before processing.", "danger")
-#     # A general info message isn't needed if specific summaries are given
-#     # ---- END OF MODIFIED MESSAGE HANDLING ----
 
-#     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
 @main_bp.route('/period/<int:period_id>/generate_slots_and_assign', methods=['POST'])
 def generate_slots_and_assign_action(period_id):
     period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    # ============ RANDOM SEED HANDLING ============
+    random_seed = request.form.get('random_seed', '').strip()
+    if random_seed:
+        try:
+            random_seed = int(random_seed)
+            if random_seed < 1 or random_seed > 999999:
+                flash("Random seed must be between 1 and 999999. Using auto-generated seed.", "warning")
+                random_seed = random.randint(1, 999999)
+        except ValueError:
+            flash("Invalid random seed. Using auto-generated seed.", "warning")
+            random_seed = random.randint(1, 999999)
+    else:
+        random_seed = random.randint(1, 999999)
+    
+    random.seed(random_seed)
+    current_app.logger.info(f"Using random seed: {random_seed}")
+    
+    # === DEBUGGING CONFIGURATION ===
+    DEBUG_SLOT_GENERATION = True
+    DEBUG_ROLE_NAMES = []  # Empty = debug ALL roles, or specify: ["Toran", "Cook"]
+    DEBUG_MAX_ITERATIONS_TO_SHOW = 10
+    
     current_app.logger.info(f"Clearing old data for period {period.id} ('{period.name}')")
     ids_to_delete_assignments = [s.id for s in ScheduledShift.query.join(ShiftDefinition)
                                .filter(ShiftDefinition.scheduling_period_id == period_id).all()]
@@ -976,9 +902,33 @@ def generate_slots_and_assign_action(period_id):
         flash("No job roles defined for this period. Cannot generate slots or assign.", "warning")
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
+    random.shuffle(job_roles_for_period)
+    current_app.logger.info(f"Randomized processing order for {len(job_roles_for_period)} job roles")
+
     total_new_slots_generated = 0
     generated_slot_objects = []
+    
     for role in job_roles_for_period:
+        should_debug_this_role = (
+            DEBUG_SLOT_GENERATION and 
+            (not DEBUG_ROLE_NAMES or role.name in DEBUG_ROLE_NAMES)
+        )
+        
+        if should_debug_this_role:
+            print(f"\n{'='*60}")
+            print(f"DEBUGGING ROLE: {role.name}")
+            print(f"{'='*60}")
+            print(f"Configuration:")
+            print(f"  - Number needed: {role.number_needed}")
+            print(f"  - Duration: {role.get_duration_timedelta()}")
+            print(f"  - Has time restrictions: {role.has_time_restrictions()}")
+            if role.has_time_restrictions():
+                print(f"  - Work hours: {role.work_start_time} - {role.work_end_time}")
+                print(f"  - Is overnight: {role.is_overnight_shift}")
+            print(f"  - Period: {period.period_start_datetime} to {period.period_end_datetime}")
+            print(f"  - Random seed: {random_seed}")
+            print("-" * 60)
+        
         role_slots_generated_this_role = 0
         current_dt_for_role = period.period_start_datetime
         duration = role.get_duration_timedelta()
@@ -987,102 +937,199 @@ def generate_slots_and_assign_action(period_id):
             current_app.logger.warning(f"Skipping role '{role.name}' due to zero duration for period {period.id}.")
             flash(f"Job Role '{role.name}' has zero/negative shift duration and was skipped for slot generation.", "warning")
             continue
+        
+        # If role has time restrictions, start at the first valid time
+        if role.has_time_restrictions():
+            if not is_time_within_role_restrictions(current_dt_for_role, role):
+                current_dt_for_role = get_next_valid_start_time(current_dt_for_role, role, period.period_end_datetime)
+                if should_debug_this_role:
+                    print(f"Initial time not valid, jumping to first valid time: {current_dt_for_role}")
             
         max_iter = 5000
         iter_count = 0
+        iterations_shown = 0
+        consecutive_invalid_slots = 0
         
         while current_dt_for_role < period.period_end_datetime and iter_count < max_iter:
             iter_count += 1
+            show_this_iteration = (
+                should_debug_this_role and 
+                iterations_shown < DEBUG_MAX_ITERATIONS_TO_SHOW
+            )
             
-            # Check if current time is within role's working hours
+            if show_this_iteration:
+                print(f"\nIteration {iter_count}:")
+                print(f"  Current time: {current_dt_for_role}")
+            
+            # Verify current time is within role's working hours
             if role.has_time_restrictions():
-                if not is_time_within_role_restrictions(current_dt_for_role, role):
-                    # Move to next valid time slot
-                    if role.is_overnight_shift:
-                        # For overnight shifts, find next start time
-                        next_start = current_dt_for_role.replace(
-                            hour=role.work_start_time.hour, 
-                            minute=role.work_start_time.minute, 
-                            second=0, 
-                            microsecond=0
-                        )
-                        if next_start <= current_dt_for_role:
-                            next_start += timedelta(days=1)
-                        current_dt_for_role = next_start
-                    else:
-                        # For day shifts, find next start time
-                        next_start = current_dt_for_role.replace(
-                            hour=role.work_start_time.hour, 
-                            minute=role.work_start_time.minute, 
-                            second=0, 
-                            microsecond=0
-                        )
-                        if next_start <= current_dt_for_role:
-                            next_start += timedelta(days=1)
-                        current_dt_for_role = next_start
+                is_valid_time = is_time_within_role_restrictions(current_dt_for_role, role)
+                
+                if show_this_iteration:
+                    print(f"  Time restriction check: {is_valid_time}")
+                    print(f"  Current time only: {current_dt_for_role.time()}")
+                    print(f"  Work window: {role.work_start_time} - {role.work_end_time}")
+                
+                if not is_valid_time:
+                    if show_this_iteration:
+                        print(f"  SKIPPING: Time not within restrictions")
+                    
+                    current_dt_for_role = get_next_valid_start_time(current_dt_for_role, role, period.period_end_datetime)
+                    consecutive_invalid_slots = 0
+                    
+                    if show_this_iteration:
+                        print(f"  Moved to next valid time: {current_dt_for_role}")
                     continue
             
+            # Calculate slot boundaries
             slot_start = current_dt_for_role
             slot_end = current_dt_for_role + duration
             
-            # For time-restricted roles, ensure slot doesn't exceed working hours
+            if show_this_iteration:
+                print(f"  Proposed slot: {slot_start} to {slot_end}")
+            
+            # Constrain to working hours if needed
             if role.has_time_restrictions():
-                if role.is_overnight_shift:
-                    # For overnight shifts, check if slot end goes beyond end time (next day)
-                    next_day_end = (slot_start.replace(
-                        hour=role.work_end_time.hour, 
-                        minute=role.work_end_time.minute, 
-                        second=0, 
-                        microsecond=0
-                    ) + timedelta(days=1))
-                    
-                    if slot_end > next_day_end:
-                        slot_end = next_day_end
-                else:
-                    # For day shifts, check if slot end goes beyond end time (same day)
-                    same_day_end = slot_start.replace(
-                        hour=role.work_end_time.hour, 
-                        minute=role.work_end_time.minute, 
-                        second=0, 
-                        microsecond=0
-                    )
-                    
-                    if slot_end > same_day_end:
-                        slot_end = same_day_end
+                original_slot_end = slot_end
+                slot_end = constrain_slot_to_working_hours(slot_start, slot_end, role)
+                
+                if show_this_iteration and slot_end != original_slot_end:
+                    print(f"  Time constraint: Adjusted end from {original_slot_end} to {slot_end}")
             
             # Ensure slot doesn't exceed period end
             if slot_end > period.period_end_datetime:
+                original_slot_end = slot_end
                 slot_end = period.period_end_datetime
+                if show_this_iteration:
+                    print(f"  Period limit: Adjusted end from {original_slot_end} to {slot_end}")
             
+            # Create slot if valid
             if slot_start < slot_end:
+                if show_this_iteration:
+                    print(f"  ✓ CREATING {role.number_needed} slot(s) from {slot_start} to {slot_end}")
+                    print(f"    Duration: {(slot_end - slot_start).total_seconds() / 3600:.2f} hours")
+                
                 for i in range(1, role.number_needed + 1):
                     new_slot = ShiftDefinition(
-                        slot_start_datetime=slot_start, 
+                        slot_start_datetime=slot_start,
                         slot_end_datetime=slot_end,
-                        instance_number=i, 
-                        scheduling_period_id=period.id, 
+                        instance_number=i,
+                        scheduling_period_id=period.id,
                         job_role_id=role.id
                     )
                     db.session.add(new_slot)
                     generated_slot_objects.append(new_slot)
                     role_slots_generated_this_role += 1
-            
-            # Move to next slot time
-            current_dt_for_role = slot_end
+                    
+                    if show_this_iteration:
+                        print(f"    - Created slot #{i}: {new_slot.name}")
+                
+                if show_this_iteration:
+                    iterations_shown += 1
+                
+                # Calculate next start time
+                tentative_next_start = slot_start + duration
+                
+                # Check if next start is valid
+                if role.has_time_restrictions():
+                    if not is_time_within_role_restrictions(tentative_next_start, role):
+                        # Jump to next valid start time
+                        current_dt_for_role = get_next_valid_start_time(
+                            tentative_next_start, role, period.period_end_datetime
+                        )
+                        if show_this_iteration:
+                            print(f"  Next start {tentative_next_start} invalid, jumping to {current_dt_for_role}")
+                    else:
+                        current_dt_for_role = tentative_next_start
+                        if show_this_iteration:
+                            print(f"  Next start: {current_dt_for_role}")
+                else:
+                    current_dt_for_role = tentative_next_start
+                    if show_this_iteration:
+                        print(f"  Next start: {current_dt_for_role}")
+                
+                consecutive_invalid_slots = 0
+                
+            else:
+                # Invalid slot
+                consecutive_invalid_slots += 1
+                
+                if show_this_iteration:
+                    print(f"  ✗ INVALID SLOT: start >= end ({slot_start} >= {slot_end})")
+                    print(f"    Consecutive invalid: {consecutive_invalid_slots}")
+                
+                # Prevent infinite loop
+                if consecutive_invalid_slots >= 10:
+                    if show_this_iteration:
+                        print(f"  BREAKING: Too many consecutive invalid slots")
+                    
+                    # Force advance to next valid time
+                    if role.has_time_restrictions():
+                        current_dt_for_role = get_next_valid_start_time(
+                            current_dt_for_role + timedelta(hours=1),
+                            role,
+                            period.period_end_datetime
+                        )
+                    else:
+                        current_dt_for_role += timedelta(hours=1)
+                    
+                    consecutive_invalid_slots = 0
+                    continue
+                
+                # Try smaller advancement
+                if role.has_time_restrictions():
+                    current_dt_for_role = get_next_valid_start_time(
+                        current_dt_for_role,
+                        role,
+                        period.period_end_datetime
+                    )
+                else:
+                    current_dt_for_role += timedelta(minutes=30)
             
             if current_dt_for_role >= period.period_end_datetime:
+                if show_this_iteration:
+                    print(f"  STOPPING: Reached period end")
                 break
-                
-        if iter_count >= max_iter: 
+        
+        if iter_count >= max_iter:
             flash(f"Max iterations for role '{role.name}' during slot generation.", "warning")
         
         total_new_slots_generated += role_slots_generated_this_role
         
-        # Log information about what was generated
+        if should_debug_this_role:
+            print(f"\nFINAL SUMMARY FOR {role.name}:")
+            print(f"  - Total slots generated: {role_slots_generated_this_role}")
+            print(f"  - Total iterations: {iter_count}")
+            period_days = (period.period_end_datetime - period.period_start_datetime).days
+            if period_days > 0:
+                print(f"  - Slots per day (approx): {role_slots_generated_this_role / period_days:.1f}")
+            if role.has_time_restrictions():
+                working_hours_per_day = (
+                    (datetime.combine(date.today(), role.work_end_time) -
+                     datetime.combine(date.today(), role.work_start_time)).total_seconds() / 3600
+                )
+                if role.is_overnight_shift:
+                    working_hours_per_day = 24 - working_hours_per_day
+                max_possible_slots_per_day = working_hours_per_day / max(1, duration.total_seconds() / 3600)
+                print(f"  - Working hours per day: {working_hours_per_day:.1f}h")
+                print(f"  - Theoretical max slots/day: {max_possible_slots_per_day:.1f}")
+            print("=" * 60)
+        
         if role.has_time_restrictions():
             current_app.logger.info(f"Generated {role_slots_generated_this_role} time-restricted slots for role '{role.name}' ({role.get_working_hours_str()})")
         else:
             current_app.logger.info(f"Generated {role_slots_generated_this_role} all-day slots for role '{role.name}'")
+    
+    if DEBUG_SLOT_GENERATION:
+        print(f"\n{'='*80}")
+        print(f"FINAL PERIOD SUMMARY")
+        print(f"{'='*80}")
+        print(f"Total slots generated across all roles: {total_new_slots_generated}")
+        for role in job_roles_for_period:
+            role_count = sum(1 for slot in generated_slot_objects if slot.job_role_id == role.id)
+            print(f"  - {role.name}: {role_count} slots")
+        print(f"Random seed used: {random_seed}")
+        print("=" * 80)
     
     if total_new_slots_generated > 0:
         try:
@@ -1102,13 +1149,15 @@ def generate_slots_and_assign_action(period_id):
     workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
     if not workers:
         flash("No workers found. Slots generated, but assignments cannot proceed.", "warning")
-        # Store this message to be displayed on the next page, maybe in session for one request
         session['assignment_details'] = [("warning", "No workers found in the system to perform assignments.")]
         return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
+    random.shuffle(workers)
+    current_app.logger.info(f"Randomized worker order for assignment ({len(workers)} workers)")
+
     assignments_to_make = []
     for slot_def in generated_slot_objects:
-        if slot_def.id is None: 
+        if slot_def.id is None:
             continue
         assignments_to_make.append(ScheduledShift(shift_definition_id=slot_def.id))
     
@@ -1128,32 +1177,53 @@ def generate_slots_and_assign_action(period_id):
         .filter(ShiftDefinition.scheduling_period_id == period.id, ScheduledShift.worker_id.is_(None))\
         .all()
     
-    current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
-    assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
+    random.shuffle(all_pending_assignments)
+    current_app.logger.info(f"Randomized assignment order for {len(all_pending_assignments)} pending assignments")
     
-    # ---- MODIFIED MESSAGE HANDLING ----
-    # Store detailed messages in session to be picked up by the next request (the redirect)
-    # This is a common pattern for Post/Redirect/Get with complex feedback.
+    current_app.logger.info(f"Attempting to assign {len(all_pending_assignments)} slots for period {period.id}.")
+    # assignment_successful, algo_messages_raw = assign_shifts_fairly(all_pending_assignments, workers, period)
+
+
+
+    assignment_successful, algo_messages_raw, algo_logs = assign_shifts_fairly(all_pending_assignments, workers, period)
+
+    # Store logs in database (add this right after the line above)
+    from .models import AlgorithmLog
+    try:
+        # Delete old logs for this period to keep only the latest
+        AlgorithmLog.query.filter_by(scheduling_period_id=period.id).delete()
+        
+        # Create new log entry
+        new_log = AlgorithmLog(
+            scheduling_period_id=period.id,
+            log_data=json.dumps(algo_logs)
+        )
+        db.session.add(new_log)
+        db.session.commit()
+    except Exception as e:
+        current_app.logger.error(f"Error storing algorithm logs: {e}")
+
+
+    # --- Message handling ---
     detailed_assignment_warnings = []
     error_count = 0
-    warning_summary_count = 0 # Count for summary message
+    warning_summary_count = 0
 
     for msg_type, msg_text in algo_messages_raw:
         if msg_type == "error":
             error_count += 1
             current_app.logger.error(f"Algo Error: {msg_text}")
-            # Flash critical errors immediately
             flash(f"Critical Algorithm Error: {msg_text}", "danger")
-        elif msg_type == "warning": # Typically "Could not assign..."
+        elif msg_type == "warning":
             warning_summary_count += 1
-            detailed_assignment_warnings.append(msg_text) # Collect for detailed display
+            detailed_assignment_warnings.append(msg_text)
             current_app.logger.warning(f"Algo Warning: {msg_text}")
         elif msg_type == "success":
             flash(msg_text, "success")
-        else: # info or other types
+        else:
             flash(msg_text, msg_type)
     
-    session['assignment_details'] = detailed_assignment_warnings # Store details in session
+    session['assignment_details'] = detailed_assignment_warnings
 
     if error_count > 0:
         flash(f"{error_count} critical errors occurred during assignment. Check server logs.", "danger")
@@ -1162,17 +1232,129 @@ def generate_slots_and_assign_action(period_id):
         flash(f"Assignment complete: {warning_summary_count} slots could not be filled. See details below or check server logs.", "warning")
     
     if assignment_successful and error_count == 0 and warning_summary_count == 0:
-        flash("All shifts assigned successfully!", "success")
+        flash(f"All shifts assigned successfully! (Random seed: {random_seed})", "success")
     elif not assignment_successful and error_count == 0 and warning_summary_count == 0:
-        flash("Shift assignment process completed, but the algorithm reported not all shifts filled (no specific warnings).", "warning")
+        flash(f"Shift assignment process completed, but the algorithm reported not all shifts filled (Random seed: {random_seed})", "warning")
     elif total_new_slots_generated > 0 and not all_pending_assignments and (error_count > 0 or warning_summary_count > 0):
-        flash("Slots were generated, but assignment step encountered issues before processing.", "danger")
-    # A general info message isn't needed if specific summaries are given
-    # ---- END OF MODIFIED MESSAGE HANDLING ----
+        flash(f"Slots were generated, but assignment step encountered issues before processing. (Random seed: {random_seed})", "danger")
 
     return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
 
-# ... (manage_job_roles_for_period GET part needs to retrieve and pass these messages) ...
+
+# Replace the get_next_valid_start_time function
+def get_next_valid_start_time(current_time, role, period_end):
+    """Get the next valid start time for a role with time restrictions"""
+    if not role.has_time_restrictions():
+        return current_time + timedelta(minutes=30)  # Default advancement
+    
+    current_time_only = current_time.time()
+    
+    if role.is_overnight_shift:
+        # For overnight shifts (e.g., 22:00 - 06:00)
+        if current_time_only >= role.work_start_time:
+            # Already in the valid window (22:00-23:59), move to next day's start
+            next_start = current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            ) + timedelta(days=1)
+        elif current_time_only < role.work_end_time:
+            # In the early morning valid window (00:00-06:00), move to today's start time
+            next_start = current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            )
+        else:
+            # Between end and start (06:00-22:00), move to today's start time
+            next_start = current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            )
+        
+        return min(next_start, period_end)
+    else:
+        # For day shifts (e.g., 08:00 - 22:00)
+        if current_time_only < role.work_start_time:
+            # Before start time today - move to start time today
+            return current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            )
+        else:
+            # After start time today - move to start time tomorrow
+            next_start = current_time.replace(
+                hour=role.work_start_time.hour,
+                minute=role.work_start_time.minute,
+                second=0,
+                microsecond=0
+            ) + timedelta(days=1)
+            return min(next_start, period_end)
+
+
+# Replace the constrain_slot_to_working_hours function
+def constrain_slot_to_working_hours(slot_start, slot_end, role):
+    """Constrain a slot's end time to role's working hours"""
+    if not role.has_time_restrictions():
+        return slot_end
+    
+    start_time_only = slot_start.time()
+    
+    if role.is_overnight_shift:
+        # For overnight shifts spanning midnight (e.g., 22:00 - 06:00)
+        
+        if start_time_only >= role.work_start_time:
+            # Started on the "late" side (e.g., 22:00-23:59)
+            # End time is next day at work_end_time
+            working_hours_end = slot_start.replace(
+                hour=role.work_end_time.hour,
+                minute=role.work_end_time.minute,
+                second=0,
+                microsecond=0
+            ) + timedelta(days=1)
+        elif start_time_only < role.work_end_time:
+            # Started on the "early" side (e.g., 00:00-05:59)
+            # End time is same day at work_end_time
+            working_hours_end = slot_start.replace(
+                hour=role.work_end_time.hour,
+                minute=role.work_end_time.minute,
+                second=0,
+                microsecond=0
+            )
+        else:
+            # This shouldn't happen if validation is working correctly
+            # Fall back to end of today
+            working_hours_end = slot_start.replace(
+                hour=role.work_end_time.hour,
+                minute=role.work_end_time.minute,
+                second=0,
+                microsecond=0
+            )
+        
+        return min(slot_end, working_hours_end)
+    else:
+        # For same-day shifts (e.g., 08:00 - 22:00)
+        same_day_end = slot_start.replace(
+            hour=role.work_end_time.hour,
+            minute=role.work_end_time.minute,
+            second=0,
+            microsecond=0
+        )
+        
+        # If the end time is before or at the start time, it means we've crossed midnight
+        # (shouldn't happen for non-overnight shifts, but handle it)
+        if same_day_end <= slot_start:
+            same_day_end += timedelta(days=1)
+        
+        return min(slot_end, same_day_end)
+
+
 
 # Add these new export routes at the end of your routes.py file, before the final comment
 @main_bp.route('/period/<int:period_id>/export_schedule_csv')
@@ -1524,3 +1706,1103 @@ def swap_assignments(assignment_id):
 
     # Adding statistics page to know how many shifts were assigned, unassigned, how did shift at night, etc.
     # Also we want to see from each role how each worker performed, how many shifts were assigned to each worker, etc.
+
+
+import statistics
+from collections import defaultdict
+
+@main_bp.route('/period/<int:period_id>/fairness_statistics')
+def fairness_statistics(period_id):
+    """Display fairness and workload distribution statistics for a period."""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    all_workers = Worker.query.order_by(Worker.name).all()
+    all_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
+
+    if not all_workers:
+        flash("No workers found to generate statistics.", "warning")
+        return redirect(url_for('main.manage_workers'))
+
+    # Eagerly load all necessary data
+    all_assignments = ScheduledShift.query.options(
+        joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role),
+        joinedload(ScheduledShift.worker_assigned)
+    ).join(ShiftDefinition).filter(
+        ShiftDefinition.scheduling_period_id == period.id
+    ).all()
+
+    # --- Initialize Statistics Dictionaries ---
+    stats = {
+        'total_shifts': len(all_assignments), 
+        'assigned_shifts': 0, 
+        'unassigned_shifts': 0,
+        'unassigned_shifts_list': [], 
+        'worker_stats': {}, 
+        'role_stats': {}
+    }
+    
+    period_duration_hours = (period.period_end_datetime - period.period_start_datetime).total_seconds() / 3600.0
+
+    for worker in all_workers:
+        stats['worker_stats'][worker.id] = {
+            'name': worker.name, 
+            'total_shifts': 0, 
+            'total_hours': 0.0, 
+            'night_shifts': 0,
+            'weekend_shifts': 0, 
+            'difficulty_counts': defaultdict(int),
+            'downtime_hours': period_duration_hours, 
+            'role_distribution': defaultdict(int)
+        }
+    for role in all_roles:
+        stats['role_stats'][role.id] = {
+            'name': role.name, 
+            'total_shifts': 0, 
+            'total_hours': 0.0,
+            'worker_distribution': defaultdict(int), 
+            'unique_workers': 0
+        }
+
+    # --- Process All Assignments ---
+    NIGHT_START_TIME = time(0, 0)
+    NIGHT_END_TIME = time(6, 0)
+
+    for assignment in all_assignments:
+        slot = assignment.defined_slot
+        if not slot or not slot.job_role: 
+            continue
+        role = slot.job_role
+        stats['role_stats'][role.id]['total_shifts'] += 1
+        stats['role_stats'][role.id]['total_hours'] += slot.duration_total_seconds / 3600.0
+
+        if assignment.worker_assigned:
+            stats['assigned_shifts'] += 1
+            worker = assignment.worker_assigned
+            worker_stat = stats['worker_stats'][worker.id]
+            duration_hours = slot.duration_total_seconds / 3600.0
+            
+            worker_stat['total_shifts'] += 1
+            worker_stat['total_hours'] += duration_hours
+            worker_stat['downtime_hours'] -= duration_hours
+            
+            # Check for night shift
+            if slot.slot_start_datetime.time() < NIGHT_END_TIME:
+                worker_stat['night_shifts'] += 1
+            
+            # Check for weekend shift (Saturday is 5, Sunday is 6)
+            if slot.slot_start_datetime.weekday() >= 5:
+                worker_stat['weekend_shifts'] += 1
+
+            # Difficulty & Role Distribution
+            worker_stat['difficulty_counts'][int(role.difficulty_multiplier)] += 1
+            worker_stat['role_distribution'][role.name] += 1
+            stats['role_stats'][role.id]['worker_distribution'][worker.name] += 1
+
+        else:
+            stats['unassigned_shifts'] += 1
+            stats['unassigned_shifts_list'].append(assignment)
+
+    for role_stat in stats['role_stats'].values():
+        role_stat['unique_workers'] = len(role_stat['worker_distribution'])
+
+    # --- Generate Key Fairness Insights ---
+    insights = []
+    if stats['assigned_shifts'] > 0:
+        active_workers = [w for w in stats['worker_stats'].values() if w['total_shifts'] > 0]
+        if not active_workers: 
+            active_workers = stats['worker_stats'].values()
+        
+        avg_hours = sum(w['total_hours'] for w in active_workers) / len(active_workers)
+        avg_night = sum(w['night_shifts'] for w in active_workers) / len(active_workers)
+        avg_weekend = sum(w['weekend_shifts'] for w in active_workers) / len(active_workers)
+        
+        for w in stats['worker_stats'].values():
+            if w['total_hours'] > avg_hours * 1.5:
+                insights.append(f"<b>{w['name']}</b> is working significantly more hours ({w['total_hours']:.1f}) than the average ({avg_hours:.1f}).")
+            if w['total_hours'] < avg_hours * 0.5 and w['total_shifts'] > 0:
+                 insights.append(f"<b>{w['name']}</b> is working significantly fewer hours ({w['total_hours']:.1f}) than the average ({avg_hours:.1f}).")
+            if avg_night > 0.5 and w['night_shifts'] > avg_night * 1.75:
+                insights.append(f"<b>{w['name']}</b> has a high number of night shifts ({w['night_shifts']}).")
+            if avg_weekend > 0.5 and w['weekend_shifts'] > avg_weekend * 1.75:
+                 insights.append(f"<b>{w['name']}</b> has a high number of weekend shifts ({w['weekend_shifts']}).")
+            if w['total_shifts'] == 0:
+                insights.append(f"<b>{w['name']}</b> was not assigned any shifts.")
+    if stats['unassigned_shifts'] > 0:
+        insights.append(f"There are <b>{stats['unassigned_shifts']} unassigned shifts</b> that need coverage.")
+
+    # **NEW: Calculate algorithmic fairness metrics**
+    fairness_metrics = calculate_fairness_metrics(period_id)
+    
+    # Calculate overall fairness summary
+    fairness_summary = None
+    if fairness_metrics:
+        workers_with_assignments = [w for w in all_workers if w.id in fairness_metrics and fairness_metrics[w.id]['my_weighted_hours'] > 0]
+        total_workers = len(workers_with_assignments)
+        
+        if total_workers > 0:
+            proportional_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_proportional'])
+            envy_free_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_envy_free'])
+            ef1_count = sum(1 for w in workers_with_assignments if fairness_metrics[w.id]['is_ef1'])
+            
+            fairness_summary = {
+                'total_workers': total_workers,
+                'proportional_count': proportional_count,
+                'envy_free_count': envy_free_count,
+                'ef1_count': ef1_count,
+                'proportional_percentage': (proportional_count / total_workers * 100) if total_workers > 0 else 0,
+                'envy_free_percentage': (envy_free_count / total_workers * 100) if total_workers > 0 else 0,
+                'ef1_percentage': (ef1_count / total_workers * 100) if total_workers > 0 else 0,
+                'is_fully_proportional': proportional_count == total_workers,
+                'is_fully_envy_free': envy_free_count == total_workers,
+                'is_fully_ef1': ef1_count == total_workers
+            }
+            
+            # Add fairness insights
+            if fairness_summary['is_fully_envy_free']:
+                insights.append("<b>🎉 Perfect Fairness:</b> The allocation is envy-free! Every worker prefers their own assignment.")
+            elif fairness_summary['is_fully_ef1']:
+                insights.append(f"<b>✅ Near-Perfect Fairness:</b> The allocation is EF1 (envy-free up to 1 item). All {total_workers} workers have minimal envy.")
+            elif fairness_summary['is_fully_proportional']:
+                insights.append(f"<b>✓ Proportional:</b> All {total_workers} workers received at least their fair share (1/n of total).")
+            else:
+                non_proportional = total_workers - proportional_count
+                if non_proportional > 0:
+                    insights.append(f"<b>⚠️ Fairness Warning:</b> {non_proportional} worker(s) received less than their proportional share.")
+
+    # --- Prepare JSON-safe data for JavaScript charts ---
+    # Convert defaultdicts to regular dicts for JSON serialization
+    worker_stats_json = {}
+    for worker_id, worker_stat in stats['worker_stats'].items():
+        worker_stats_json[worker_id] = {
+            'name': worker_stat['name'],
+            'total_shifts': worker_stat['total_shifts'],
+            'total_hours': worker_stat['total_hours'],
+            'night_shifts': worker_stat['night_shifts'],
+            'weekend_shifts': worker_stat['weekend_shifts'],
+            'difficulty_counts': dict(worker_stat['difficulty_counts']),
+            'downtime_hours': worker_stat['downtime_hours'],
+            'role_distribution': dict(worker_stat['role_distribution'])
+        }
+    
+    role_stats_json = {}
+    for role_id, role_stat in stats['role_stats'].items():
+        role_stats_json[role_id] = {
+            'name': role_stat['name'],
+            'total_shifts': role_stat['total_shifts'],
+            'total_hours': role_stat['total_hours'],
+            'worker_distribution': dict(role_stat['worker_distribution']),
+            'unique_workers': role_stat['unique_workers']
+        }
+    
+    # Clean fairness_metrics by removing non-serializable objects
+    fairness_metrics_json = {}
+    if fairness_metrics:
+        for worker_id, metrics in fairness_metrics.items():
+            # Create a clean copy without problematic objects
+            fairness_metrics_json[worker_id] = {
+                'worker_name': metrics.get('worker_name'),
+                'my_weighted_hours': metrics.get('my_weighted_hours'),
+                'fair_share': metrics.get('fair_share'),
+                'is_proportional': metrics.get('is_proportional'),
+                'is_envy_free': metrics.get('is_envy_free'),
+                'is_ef1': metrics.get('is_ef1'),
+                'envy_towards': metrics.get('envy_towards', []),
+                # Skip envy_details as it contains complex objects
+            }
+    
+    chart_data = {
+        'stats': {
+            'total_shifts': stats['total_shifts'],
+            'assigned_shifts': stats['assigned_shifts'],
+            'unassigned_shifts': stats['unassigned_shifts'],
+            'worker_stats': worker_stats_json,
+            'role_stats': role_stats_json
+        },
+        'fairnessSummary': fairness_summary,
+        'fairnessMetrics': fairness_metrics_json  # Use cleaned version
+    }
+
+    return render_template('fairness_statistics.html', 
+                         period=period, 
+                         stats=stats, 
+                         insights=insights,
+                         fairness_metrics=fairness_metrics,
+                         fairness_summary=fairness_summary,
+                         chart_data=chart_data)
+
+# helper function to make SQLAlchemy objects JSON serializable
+def make_json_safe(obj):
+    """Recursively convert objects to JSON-safe formats"""
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_safe(item) for item in obj]
+    elif isinstance(obj, defaultdict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif hasattr(obj, '__dict__'):
+        # SQLAlchemy object - convert to dict of safe values
+        return {k: make_json_safe(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
+    else:
+        # Primitive types (int, float, str, bool, None)
+        return obj
+
+############### Adding CSV and Excel difficulty export for workers ###############
+# Add these routes to routes.py
+
+# Add these updated functions to your routes.py file
+
+@main_bp.route('/period/<int:period_id>/export_rating_template')
+def export_rating_template(period_id):
+    """Export CSV template in matrix format: Workers as rows, Job Roles as columns"""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    # Get all workers and job roles for this period
+    all_workers = Worker.query.options(selectinload(Worker.qualified_roles)).all()
+    job_roles = JobRole.query.filter_by(scheduling_period_id=period.id).order_by(JobRole.name).all()
+    
+    if not all_workers:
+        flash("No workers found. Add workers before exporting rating template.", "warning")
+        return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+    
+    if not job_roles:
+        flash("No job roles found for this period.", "warning")
+        return redirect(url_for('main.manage_job_roles_for_period', period_id=period.id))
+    
+    # Create CSV data in matrix format
+    csv_rows = []
+    
+    # Create header row: Worker Name + all job role names
+    header_row = ['Worker Name'] + [role.name for role in job_roles]
+    csv_rows.append(header_row)
+    
+    # Add instruction row
+    instruction_row = ['INSTRUCTIONS: Rate 1-5 (1=Easy, 5=Very Hard). Leave empty if not qualified or don\'t want to rate.'] + [''] * len(job_roles)
+    csv_rows.append(instruction_row)
+    
+    # Add current difficulty reference row
+    current_diff_row = ['Current System Difficulty'] + [f"{role.difficulty_multiplier:.1f}" for role in job_roles]
+    csv_rows.append(current_diff_row)
+    
+    # Add qualification reference row 
+    qualified_workers_per_role = []
+    for role in job_roles:
+        qualified_count = sum(1 for worker in all_workers if role in worker.qualified_roles)
+        qualified_workers_per_role.append(f"{qualified_count} qualified")
+    
+    qualification_row = ['Workers Qualified'] + qualified_workers_per_role
+    csv_rows.append(qualification_row)
+    
+    # Add empty separator row
+    csv_rows.append([''] * len(header_row))
+    
+    # Add data rows: one row per worker
+    for worker in all_workers:
+        worker_row = [worker.name]
+        
+        for role in job_roles:
+            is_qualified = role in worker.qualified_roles
+            # Pre-fill with empty string - workers will fill in ratings
+            # Add a hint in the cell if not qualified
+            if is_qualified:
+                worker_row.append('')  # Empty for qualified workers to fill
+            else:
+                worker_row.append('N/A')  # Mark as N/A for unqualified workers
+        
+        csv_rows.append(worker_row)
+    
+    # Create CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerows(csv_rows)
+    
+    # Create response
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename=difficulty_matrix_{period.name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.csv'
+    
+    flash(f"Matrix format rating template exported with {len(all_workers)} workers and {len(job_roles)} job roles. Each worker gets one row to fill.", "success")
+    return response
+
+
+
+
+
+
+
+
+@main_bp.route('/period/<int:period_id>/import_ratings', methods=['GET', 'POST'])
+def import_worker_ratings(period_id):
+    """Import worker difficulty ratings from matrix format CSV with extreme rating protection"""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    if request.method == 'GET':
+        # Show import form
+        return render_template('import_ratings.html', period=period)
+    
+    # Handle POST request with file upload
+    if 'rating_file' not in request.files:
+        flash('No file selected for upload.', 'danger')
+        return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+    
+    file = request.files['rating_file']
+    if file.filename == '':
+        flash('No file selected for upload.', 'danger')
+        return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+    
+    if not file.filename.lower().endswith('.csv'):
+        flash('Please upload a CSV file.', 'danger')
+        return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+    
+    try:
+        # Read CSV content
+        csv_content = file.read().decode('utf-8')
+        csv_lines = csv_content.strip().split('\n')
+        
+        if len(csv_lines) < 6:  # Header + instruction + current diff + qualified + empty + at least 1 worker
+            flash('CSV file appears to be empty or invalid. Please use the exported matrix template.', 'danger')
+            return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+        # Parse CSV
+        reader = csv.reader(io.StringIO(csv_content))
+        rows = list(reader)
+        
+        # Extract header row (job role names)
+        header_row = rows[0]
+        if len(header_row) < 2 or header_row[0] != 'Worker Name':
+            flash('Invalid CSV format. Please use the exported matrix template.', 'danger')
+            return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+        job_role_names = header_row[1:]  # Skip "Worker Name" column
+        
+        # Find where the actual data starts (skip instruction rows)
+        data_start_row = 5  # Skip header + instruction + current diff + qualified + empty
+        worker_rows = rows[data_start_row:]
+        
+        # Process ratings
+        ratings_by_role = defaultdict(list)  # role_name -> list of ratings
+        worker_rating_map = defaultdict(dict)  # worker_name -> {role_name: rating}
+        processed_count = 0
+        skipped_count = 0
+        error_count = 0
+        
+        for row_num, row in enumerate(worker_rows, start=data_start_row + 1):
+            if len(row) < 2:  # Skip empty rows
+                continue
+                
+            worker_name = row[0].strip()
+            if not worker_name or worker_name.startswith('INSTRUCTIONS'):
+                continue
+            
+            # Process each role rating for this worker
+            for col_idx, role_name in enumerate(job_role_names):
+                if col_idx + 1 >= len(row):  # Skip if not enough columns
+                    continue
+                    
+                rating_str = row[col_idx + 1].strip()
+                
+                # Skip empty, N/A, or non-numeric ratings
+                if not rating_str or rating_str.upper() in ['N/A', 'NA', '']:
+                    skipped_count += 1
+                    continue
+                
+                try:
+                    rating = float(rating_str)
+                    
+                    # Normalize and convert to integer
+                    if rating < 1:
+                        rating = 1
+                    elif rating > 5:
+                        rating = 5
+                    
+                    rating = int(round(rating))  # Convert to integer
+                    
+                    ratings_by_role[role_name].append({
+                        'worker': worker_name,
+                        'rating': rating,
+                        'comments': f"Matrix import from {worker_name}"
+                    })
+                    
+                    # Store for individual tracking
+                    worker_rating_map[worker_name][role_name] = rating
+                    
+                    processed_count += 1
+                    
+                except ValueError:
+                    current_app.logger.warning(f"Row {row_num}: Invalid rating '{rating_str}' for {worker_name}-{role_name}")
+                    error_count += 1
+                    continue
+        
+        if not ratings_by_role:
+            flash('No valid ratings found in the uploaded matrix. Please check the format and try again.', 'warning')
+            return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+        
+        # ENHANCED: Detect and handle extreme rating patterns
+        pattern_warnings, cleaned_ratings, normalized_ratings = detect_extreme_rating_patterns(ratings_by_role, period_id)
+        distribution_warnings = analyze_role_distribution(cleaned_ratings if cleaned_ratings else ratings_by_role)
+        
+        # Use Strategy 1: Remove extreme workers entirely (recommended approach)
+        final_ratings = cleaned_ratings if cleaned_ratings else ratings_by_role
+        
+        # Combine all warnings
+        all_warnings = pattern_warnings + distribution_warnings
+        
+        # Calculate average ratings and update job roles AND store individual ratings
+        updated_roles = []
+        role_stats = {}
+        removed_roles = []
+        individual_ratings_saved = 0
+        
+        for role_name, ratings_list in final_ratings.items():
+            # Find the corresponding job role
+            role = JobRole.query.filter_by(
+                scheduling_period_id=period_id, 
+                name=role_name
+            ).first()
+            
+            if not role:
+                current_app.logger.warning(f"Role '{role_name}' not found in period {period.name}")
+                continue
+            
+            if not ratings_list:  # No valid ratings after cleaning
+                current_app.logger.warning(f"No valid ratings for role '{role_name}' after cleaning")
+                removed_roles.append(role_name)
+                continue
+            
+            # **STEP 2A: Store individual ratings in database**
+            for rating_data in ratings_list:
+                worker = Worker.query.filter_by(name=rating_data['worker']).first()
+                if worker:
+                    # Check if rating already exists
+                    existing_rating = WorkerRoleRating.query.filter_by(
+                        worker_id=worker.id,
+                        job_role_id=role.id
+                    ).first()
+                    
+                    if existing_rating:
+                        # Update existing rating
+                        old_rating = existing_rating.difficulty_rating
+                        existing_rating.difficulty_rating = float(rating_data['rating'])
+                        existing_rating.created_at = datetime.utcnow()
+                        current_app.logger.info(f"Updated rating for {worker.name} on {role_name}: {old_rating} -> {rating_data['rating']}")
+                    else:
+                        # Create new rating
+                        new_rating = WorkerRoleRating(
+                            worker_id=worker.id,
+                            job_role_id=role.id,
+                            difficulty_rating=float(rating_data['rating'])
+                        )
+                        db.session.add(new_rating)
+                        current_app.logger.info(f"Created new rating for {worker.name} on {role_name}: {rating_data['rating']}")
+                    
+                    individual_ratings_saved += 1
+            
+            # **STEP 2B: Calculate average rating (for fallback and display)**
+            rating_values = [r['rating'] for r in ratings_list]
+            avg_rating = sum(rating_values) / len(rating_values)
+            old_difficulty = role.difficulty_multiplier
+            
+            # Update role difficulty (round to 2 decimal places)
+            role.difficulty_multiplier = round(avg_rating, 2)
+            updated_roles.append(role)
+            
+            role_stats[role_name] = {
+                'old_difficulty': old_difficulty,
+                'new_difficulty': role.difficulty_multiplier,
+                'num_ratings': len(rating_values),
+                'ratings': rating_values,
+                'avg_rating': avg_rating,
+                'cleaned': len(ratings_list) != len(ratings_by_role.get(role_name, []))
+            }
+        
+        # Handle roles that lost all ratings due to cleaning
+        for role_name in removed_roles:
+            if role_name in ratings_by_role:  # Had ratings before cleaning
+                all_warnings.append(f"Role '{role_name}' lost all ratings after removing extreme patterns - keeping original difficulty")
+        
+        # Commit changes
+        db.session.commit()
+        
+        # Create success message with details
+        flash(f"Successfully imported matrix ratings! Updated {len(updated_roles)} job roles based on {processed_count} worker ratings.", "success")
+        flash(f"Saved {individual_ratings_saved} individual worker-role ratings for personalized fairness analysis.", "info")
+        
+        if skipped_count > 0:
+            flash(f"Skipped {skipped_count} empty/N/A ratings (workers who didn't rate certain roles).", "info")
+        
+        if error_count > 0:
+            flash(f"Found {error_count} invalid ratings that were ignored.", "warning")
+        
+        # Show pattern detection warnings
+        for warning in all_warnings:
+            flash(warning, "warning")
+        
+        # Store detailed results in session for display
+        session['import_results'] = {
+            'role_stats': role_stats,
+            'processed_count': processed_count,
+            'skipped_count': skipped_count,
+            'error_count': error_count,
+            'individual_ratings_saved': individual_ratings_saved,
+            'pattern_warnings': pattern_warnings,
+            'distribution_warnings': distribution_warnings,
+            'extreme_workers_detected': len(pattern_warnings) > 0
+        }
+        
+        return redirect(url_for('main.show_import_results', period_id=period_id))
+        
+    except Exception as e:
+        current_app.logger.error(f"Error importing matrix ratings: {e}")
+        flash(f"Error processing matrix file: {e}", "danger")
+        return redirect(url_for('main.import_worker_ratings', period_id=period_id))
+
+# Helper functions - add these to your routes.py file as well:
+
+def detect_extreme_rating_patterns(ratings_by_role, period_id):
+    """
+    Detect and handle extreme rating patterns that could game the system
+    Returns: warnings, normalized_ratings_by_role
+    """
+    warnings = []
+    normalized_ratings = {}
+    
+    # Analyze individual worker rating patterns
+    worker_ratings = defaultdict(list)  # worker -> [all their ratings]
+    
+    # Collect all ratings by worker
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_ratings[rating_data['worker']].append(rating_data['rating'])
+    
+    # Detect extreme patterns
+    extreme_workers = []
+    for worker_name, worker_rating_list in worker_ratings.items():
+        if len(worker_rating_list) < 2:  # Need at least 2 ratings to analyze
+            continue
+            
+        rating_variance = statistics.variance(worker_rating_list) if len(worker_rating_list) > 1 else 0
+        rating_mean = statistics.mean(worker_rating_list)
+        
+        # Pattern 1: All ratings the same (variance = 0)
+        if rating_variance == 0:
+            if rating_mean <= 1.5:
+                warnings.append(f"{worker_name} rated ALL roles as {int(rating_mean)} (too easy) - ratings removed to prevent overwork")
+                extreme_workers.append((worker_name, 'all_easy'))
+            elif rating_mean >= 4.5:
+                warnings.append(f"{worker_name} rated ALL roles as {int(rating_mean)} (too hard) - ratings removed to prevent gaming")
+                extreme_workers.append((worker_name, 'all_hard'))
+        
+        # Pattern 2: Very low variance (almost all the same)
+        elif rating_variance < 0.3 and len(worker_rating_list) >= 3:
+            warnings.append(f"{worker_name} gave very similar ratings (variance: {rating_variance:.2f}) - may indicate unrealistic assessment")
+            extreme_workers.append((worker_name, 'low_variance'))
+    
+    # Remove extreme ratings entirely
+    cleaned_ratings = {}
+    for role_name, ratings_list in ratings_by_role.items():
+        cleaned_list = []
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            # Skip ratings from workers with extreme patterns
+            if not any(worker_name == extreme[0] for extreme in extreme_workers):
+                cleaned_list.append(rating_data)
+        
+        if cleaned_list:  # Only include roles that have valid ratings left
+            cleaned_ratings[role_name] = cleaned_list
+    
+    return warnings, cleaned_ratings, normalized_ratings
+
+
+def analyze_role_distribution(ratings_by_role):
+    """Check if roles have meaningful difficulty differences"""
+    if len(ratings_by_role) < 2:
+        return []
+    
+    warnings = []
+    role_averages = {}
+    
+    # Calculate average for each role
+    for role_name, ratings_list in ratings_by_role.items():
+        if ratings_list:
+            avg = sum(r['rating'] for r in ratings_list) / len(ratings_list)
+            role_averages[role_name] = avg
+    
+    if len(role_averages) < 2:
+        return warnings
+    
+    # Check if all roles have similar difficulty
+    avg_values = list(role_averages.values())
+    difficulty_variance = statistics.variance(avg_values)
+    
+    if difficulty_variance < 0.5:  # Very low variance between roles
+        warnings.append(f"All roles have similar difficulty ratings (variance: {difficulty_variance:.2f}) - difficulty weighting may not be very effective")
+    
+    # List roles by difficulty for reference
+    sorted_roles = sorted(role_averages.items(), key=lambda x: x[1])
+    if len(sorted_roles) >= 3:
+        easiest = sorted_roles[0]
+        hardest = sorted_roles[-1]
+        warnings.append(f"Easiest role: {easiest[0]} ({easiest[1]:.1f}), Hardest role: {hardest[0]} ({hardest[1]:.1f})")
+    
+    return warnings
+
+
+
+
+@main_bp.route('/period/<int:period_id>/import_results')
+def show_import_results(period_id):
+    """Show detailed results of rating import"""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    import_results = session.pop('import_results', None)
+    if not import_results:
+        flash("No import results to display.", "warning")
+        return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+    
+    return render_template('import_results.html', 
+                         period=period, 
+                         results=import_results)
+
+
+@main_bp.route('/period/<int:period_id>/reset_difficulties', methods=['POST'])
+def reset_difficulties(period_id):
+    """Reset all job role difficulties to 1.0 (neutral)"""
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    job_roles = JobRole.query.filter_by(scheduling_period_id=period_id).all()
+    if not job_roles:
+        flash("No job roles found to reset.", "warning")
+        return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+    
+    # Reset all difficulties to 1.0
+    for role in job_roles:
+        role.difficulty_multiplier = 1.0
+    
+    db.session.commit()
+    
+    flash(f"Reset difficulty ratings for {len(job_roles)} job roles to neutral (1.0).", "success")
+    return redirect(url_for('main.manage_job_roles_for_period', period_id=period_id))
+
+
+
+
+
+
+
+
+
+
+
+
+##################### Handling rating scenarios ###########################
+
+import statistics
+
+
+def detect_extreme_rating_patterns(ratings_by_role, period_id):
+    """
+    Detect and handle extreme rating patterns that could game the system
+    Returns: warnings, normalized_ratings_by_role
+    """
+    warnings = []
+    normalized_ratings = {}
+    
+    # Analyze individual worker rating patterns
+    worker_ratings = defaultdict(list)  # worker -> [all their ratings]
+    
+    # Collect all ratings by worker
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_ratings[rating_data['worker']].append(rating_data['rating'])
+    
+    # Detect extreme patterns
+    extreme_workers = []
+    for worker_name, worker_rating_list in worker_ratings.items():
+        if len(worker_rating_list) < 2:  # Need at least 2 ratings to analyze
+            continue
+            
+        rating_variance = statistics.variance(worker_rating_list) if len(worker_rating_list) > 1 else 0
+        rating_mean = statistics.mean(worker_rating_list)
+        
+        # Pattern 1: All ratings the same (variance = 0)
+        if rating_variance == 0:
+            if rating_mean <= 1.5:
+                warnings.append(f"⚠️ {worker_name} rated ALL roles as {int(rating_mean)} (too easy) - this may cause overwork")
+                extreme_workers.append((worker_name, 'all_easy'))
+            elif rating_mean >= 4.5:
+                warnings.append(f"⚠️ {worker_name} rated ALL roles as {int(rating_mean)} (too hard) - this may avoid work")
+                extreme_workers.append((worker_name, 'all_hard'))
+        
+        # Pattern 2: Very low variance (almost all the same)
+        elif rating_variance < 0.3:
+            warnings.append(f"⚠️ {worker_name} gave very similar ratings (variance: {rating_variance:.2f}) - may indicate gaming")
+            extreme_workers.append((worker_name, 'low_variance'))
+    
+    # Option 1: Remove extreme ratings entirely
+    cleaned_ratings = {}
+    for role_name, ratings_list in ratings_by_role.items():
+        cleaned_list = []
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            # Skip ratings from workers with extreme patterns
+            if not any(worker_name == extreme[0] for extreme in extreme_workers):
+                cleaned_list.append(rating_data)
+        
+        if cleaned_list:  # Only include roles that have valid ratings left
+            cleaned_ratings[role_name] = cleaned_list
+        else:
+            # If no valid ratings left, warn and use default
+            warnings.append(f"⚠️ Role '{role_name}' has no valid ratings after removing extreme patterns - using default 1.0")
+    
+    # Option 2: Normalize ratings within each worker to force distribution
+    normalized_ratings = apply_worker_normalization(ratings_by_role, extreme_workers)
+    
+    return warnings, cleaned_ratings, normalized_ratings
+
+
+def apply_worker_normalization(ratings_by_role, extreme_workers):
+    """
+    Force each worker's ratings to have proper distribution (not all the same)
+    """
+    # Collect all ratings by worker first
+    worker_all_ratings = defaultdict(dict)  # worker -> {role: rating}
+    
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            worker_all_ratings[worker_name][role_name] = rating_data['rating']
+    
+    # Normalize extreme workers
+    normalized_ratings_by_role = defaultdict(list)
+    
+    for role_name, ratings_list in ratings_by_role.items():
+        for rating_data in ratings_list:
+            worker_name = rating_data['worker']
+            original_rating = rating_data['rating']
+            
+            # Check if this worker has extreme patterns
+            is_extreme = any(worker_name == extreme[0] for extreme in extreme_workers)
+            
+            if is_extreme:
+                # Apply forced distribution: convert flat ratings to relative rankings
+                worker_ratings = worker_all_ratings[worker_name]
+                
+                if len(worker_ratings) >= 3:  # Need at least 3 roles to rank
+                    # Convert to percentile-based ratings
+                    sorted_roles = sorted(worker_ratings.items(), key=lambda x: x[1])
+                    percentile_rating = get_percentile_rating(role_name, sorted_roles)
+                    normalized_rating = percentile_rating
+                else:
+                    # Not enough roles to normalize, use default
+                    normalized_rating = 3.0  # Default to moderate
+                
+                normalized_ratings_by_role[role_name].append({
+                    'worker': worker_name,
+                    'rating': normalized_rating,
+                    'comments': f"Normalized from {original_rating} (extreme pattern detected)"
+                })
+            else:
+                # Keep original rating for normal workers
+                normalized_ratings_by_role[role_name].append(rating_data)
+    
+    return dict(normalized_ratings_by_role)
+
+
+def get_percentile_rating(target_role, sorted_roles):
+    """Convert role position in worker's ranking to 1-5 scale"""
+    total_roles = len(sorted_roles)
+    
+    # Find position of target role
+    position = next(i for i, (role, _) in enumerate(sorted_roles) if role == target_role)
+    
+    # Convert position to 1-5 scale
+    percentile = position / (total_roles - 1) if total_roles > 1 else 0.5
+    
+    # Map percentile to rating scale
+    if percentile <= 0.2:
+        return 1  # Bottom 20% = Easy
+    elif percentile <= 0.4:
+        return 2  # Next 20% = Light  
+    elif percentile <= 0.6:
+        return 3  # Middle 20% = Moderate
+    elif percentile <= 0.8:
+        return 4  # Next 20% = Hard
+    else:
+        return 5  # Top 20% = Very Hard
+
+
+def analyze_role_distribution(ratings_by_role):
+    """Check if roles have meaningful difficulty differences"""
+    if len(ratings_by_role) < 2:
+        return []
+    
+    warnings = []
+    role_averages = {}
+    
+    # Calculate average for each role
+    for role_name, ratings_list in ratings_by_role.items():
+        if ratings_list:
+            avg = sum(r['rating'] for r in ratings_list) / len(ratings_list)
+            role_averages[role_name] = avg
+    
+    if len(role_averages) < 2:
+        return warnings
+    
+    # Check if all roles have similar difficulty
+    avg_values = list(role_averages.values())
+    difficulty_variance = statistics.variance(avg_values)
+    
+    if difficulty_variance < 0.5:  # Very low variance between roles
+        warnings.append(f"⚠️ All roles have similar difficulty ratings (variance: {difficulty_variance:.2f}) - difficulty weighting may not be effective")
+    
+    # List roles by difficulty for reference
+    sorted_roles = sorted(role_averages.items(), key=lambda x: x[1])
+    if len(sorted_roles) >= 3:
+        easiest = sorted_roles[0]
+        hardest = sorted_roles[-1]
+        warnings.append(f"ℹ️ Easiest role: {easiest[0]} ({easiest[1]:.1f}), Hardest role: {hardest[0]} ({hardest[1]:.1f})")
+    
+    return warnings
+
+
+# Update your import_worker_ratings function to use these validations:
+
+# Replace the existing processing section with this enhanced version:
+def enhanced_rating_processing(ratings_by_role, period_id):
+    """Enhanced processing with extreme pattern detection"""
+    
+    # Detect extreme patterns
+    pattern_warnings, cleaned_ratings, normalized_ratings = detect_extreme_rating_patterns(ratings_by_role, period_id)
+    
+    # Analyze role distribution
+    distribution_warnings = analyze_role_distribution(cleaned_ratings)
+    
+    # Combine all warnings
+    all_warnings = pattern_warnings + distribution_warnings
+    
+    # Use cleaned ratings (with extreme patterns removed)
+    final_ratings = cleaned_ratings
+    
+    # Alternative: Use normalized ratings (extreme patterns fixed)
+    # final_ratings = normalized_ratings
+    
+    return final_ratings, all_warnings
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+########### Helper functions for fairness statistics ###########
+def get_worker_individual_difficulty(worker_id, job_role_id):
+    """Get worker's individual rating for a role, or use role average as fallback"""
+    rating = WorkerRoleRating.query.filter_by(
+        worker_id=worker_id,
+        job_role_id=job_role_id
+    ).first()
+    
+    if rating:
+        return rating.difficulty_rating
+    else:
+        # Fallback to role's average difficulty
+        role = JobRole.query.get(job_role_id)
+        return role.difficulty_multiplier if role else 1.0
+
+
+def calculate_fairness_metrics(period_id):
+    """
+    Calculate fairness metrics (proportionality, envy-free, EF1) for a scheduling period
+    Based on individual worker perceptions of difficulty
+    """
+    period = SchedulingPeriod.query.get_or_404(period_id)
+    
+    # Get all workers and assignments
+    all_workers = Worker.query.all()
+    all_assignments = ScheduledShift.query.options(
+        joinedload(ScheduledShift.defined_slot).joinedload(ShiftDefinition.job_role),
+        joinedload(ScheduledShift.worker_assigned)
+    ).join(ShiftDefinition).filter(
+        ShiftDefinition.scheduling_period_id == period_id,
+        ScheduledShift.worker_id.isnot(None)
+    ).all()
+    
+    if not all_workers or not all_assignments:
+        return None
+    
+    # Calculate each worker's bundle (weighted hours by their own perception)
+    worker_bundles = defaultdict(lambda: {'real_hours': 0, 'weighted_hours': 0, 'shifts': []})
+    
+    for assignment in all_assignments:
+        if not assignment.worker_assigned:
+            continue
+            
+        worker = assignment.worker_assigned
+        slot = assignment.defined_slot
+        role_id = slot.job_role_id
+        
+        # Real duration
+        real_hours = slot.duration_total_seconds / 3600.0
+        
+        # Worker's individual difficulty perception
+        individual_difficulty = get_worker_individual_difficulty(worker.id, role_id)
+        weighted_hours = real_hours * individual_difficulty
+        
+        worker_bundles[worker.id]['real_hours'] += real_hours
+        worker_bundles[worker.id]['weighted_hours'] += weighted_hours
+        worker_bundles[worker.id]['shifts'].append({
+            'assignment': assignment,
+            'real_hours': real_hours,
+            'weighted_hours': weighted_hours,
+            'role_id': role_id
+        })
+    
+    # Calculate fairness metrics for each worker
+    fairness_results = {}
+    
+    for worker in all_workers:
+        if worker.id not in worker_bundles:
+            # Worker has no assignments
+            fairness_results[worker.id] = {
+                'worker_name': worker.name,
+                'my_weighted_hours': 0,
+                'fair_share': 0,
+                'is_proportional': False,
+                'envy_towards': [],
+                'is_envy_free': True,
+                'is_ef1': True,
+                'envy_details': []
+            }
+            continue
+        
+        # Calculate this worker's fair share
+        # Fair share = (Total weighted hours perceived by ME) / (Number of workers)
+        total_weighted_by_me = 0
+        for assignment in all_assignments:
+            if assignment.worker_assigned:
+                slot = assignment.defined_slot
+                real_hours = slot.duration_total_seconds / 3600.0
+                my_difficulty = get_worker_individual_difficulty(worker.id, slot.job_role_id)
+                total_weighted_by_me += real_hours * my_difficulty
+        
+        n_workers = len(all_workers)
+        fair_share = total_weighted_by_me / n_workers if n_workers > 0 else 0
+        
+        my_weighted_hours = worker_bundles[worker.id]['weighted_hours']
+        
+        # Check proportionality: Do I get at least 1/n of the total (in my view)?
+        is_proportional = my_weighted_hours >= fair_share * 0.99  # Small tolerance
+        
+        # Check envy: Do I prefer someone else's bundle?
+        envy_towards = []
+        envy_details = []
+        
+        for other_worker in all_workers:
+            if other_worker.id == worker.id:
+                continue
+            
+            if other_worker.id not in worker_bundles:
+                continue
+            
+            # Calculate how I value the other worker's bundle
+            other_bundle_value_to_me = 0
+            other_bundle_shifts = []
+            
+            for shift_info in worker_bundles[other_worker.id]['shifts']:
+                slot = shift_info['assignment'].defined_slot
+                real_hours = shift_info['real_hours']
+                my_difficulty = get_worker_individual_difficulty(worker.id, slot.job_role_id)
+                value_to_me = real_hours * my_difficulty
+                other_bundle_value_to_me += value_to_me
+                other_bundle_shifts.append({
+                    'shift': shift_info['assignment'],
+                    'value_to_me': value_to_me,
+                    'role_name': slot.job_role.name
+                })
+            
+            # Do I envy this worker?
+            if other_bundle_value_to_me < my_weighted_hours * 0.99:  # Small tolerance
+                # I prefer their bundle (less work in my view)
+                envy_amount = my_weighted_hours - other_bundle_value_to_me
+                envy_towards.append(other_worker.id)
+                
+                # Sort their shifts by value to me (descending) for EF1 check
+                other_bundle_shifts_sorted = sorted(other_bundle_shifts, key=lambda s: s['value_to_me'], reverse=True)
+                
+                envy_details.append({
+                    'envied_worker': other_worker.name,
+                    'their_bundle_value_to_me': other_bundle_value_to_me,
+                    'my_bundle_value': my_weighted_hours,
+                    'envy_amount': envy_amount,
+                    'their_shifts': other_bundle_shifts_sorted
+                })
+        
+        is_envy_free = len(envy_towards) == 0
+        
+        # Check EF1: Is envy eliminated by removing one shift?
+        is_ef1 = is_envy_free  # Start optimistic
+        
+        if not is_envy_free:
+            # For each envied worker, check if removing their most valuable shift (to me) eliminates envy
+            for envy_detail in envy_details:
+                their_shifts = envy_detail['their_shifts']
+                
+                if not their_shifts:
+                    continue
+                
+                # Find the shift I value most in their bundle (already sorted)
+                most_valuable_shift = their_shifts[0]
+                
+                # Value of their bundle minus that shift
+                remaining_value = envy_detail['their_bundle_value_to_me'] - most_valuable_shift['value_to_me']
+                
+                # If I still envy after removing one shift, not EF1
+                if remaining_value < my_weighted_hours * 0.99:
+                    is_ef1 = False
+                    envy_detail['is_ef1_satisfied'] = False
+                    envy_detail['most_valuable_shift'] = most_valuable_shift
+                    envy_detail['remaining_after_removal'] = remaining_value
+                else:
+                    envy_detail['is_ef1_satisfied'] = True
+                    envy_detail['most_valuable_shift'] = most_valuable_shift
+                    envy_detail['remaining_after_removal'] = remaining_value
+        
+        fairness_results[worker.id] = {
+            'worker_name': worker.name,
+            'my_weighted_hours': my_weighted_hours,
+            'fair_share': fair_share,
+            'is_proportional': is_proportional,
+            'envy_towards': envy_towards,
+            'is_envy_free': is_envy_free,
+            'is_ef1': is_ef1,
+            'envy_details': envy_details
+        }
+    
+    return fairness_results
+
+
+
+########### Showing Logs ###########
+@main_bp.route('/period/<int:period_id>/get_algorithm_logs')
+def get_algorithm_logs(period_id):
+    """API endpoint to get algorithm logs"""
+    from .models import AlgorithmLog
+    
+    log_entry = AlgorithmLog.query.filter_by(scheduling_period_id=period_id).order_by(AlgorithmLog.created_at.desc()).first()
+    
+    if log_entry:
+        return jsonify({
+            'success': True,
+            'logs': json.loads(log_entry.log_data),
+            'created_at': log_entry.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'message': 'No logs available. Run the algorithm first.'
+        })

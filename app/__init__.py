@@ -10,8 +10,18 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    if isinstance(app.config.get('PERMANENT_SESSION_LIFETIME'), (int, float)):
-         app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=app.config['PERMANENT_SESSION_LIFETIME'])
+#     if isinstance(app.config.get('PERMANENT_SESSION_LIFETIME'), (int, float)):
+#          app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=app.config['PERMANENT_SESSION_LIFETIME'])
+
+    # Ensure permanent session lifetime is correctly parsed
+    lifetime = app.config.get('PERMANENT_SESSION_LIFETIME')
+    # Environment variables are always strings. Allow numeric strings by
+    # converting them to integers before building the timedelta.
+    if isinstance(lifetime, str) and lifetime.isdigit():
+        lifetime = int(lifetime)
+
+    if isinstance(lifetime, (int, float)):
+        app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(seconds=lifetime)
 
     db.init_app(app)
     migrate = Migrate(app, db)  # <-- 2. INITIALIZE IT

@@ -27,3 +27,14 @@ body {
 .list-group-item.active small {
     color: #f8f9fa; /* Lighter text for small elements on active item */
 }
+
+.w-25 { width: 25%; }
+.w-50 { width: 50%; }
+.w-75 { width: 75%; }
+.w-100 { width: 100%; }
+
+@media print {
+    .no-print { display: none !important; }
+    body { background: white; }
+    .card { page-break-inside: avoid; }
+}

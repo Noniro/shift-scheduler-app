@@ -59,6 +59,10 @@
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <p class="text-muted mb-0"><small>Total Assigned Slots: {{ scheduled_assignments|length }}</small></p>
                             <div class="btn-group" role="group" aria-label="Export options">
+                                <!-- NEW: Algorithm Logs Button -->
+        <button type="button" class="btn btn-info btn-sm" onclick="loadAlgorithmLogs()" title="View Algorithm Logs">
+            🔍 Algorithm Logs
+        </button>
                                 <a href="{{ url_for('main.export_schedule_csv', period_id=active_period.id) }}" 
                                    class="btn btn-success btn-sm" title="Export as CSV">
                                     📊 Export CSV
@@ -218,6 +222,32 @@
             </div>
         {% endif %} {# end if active_period #}
     {% endif %} {# end if not current_user_name #}
+    <!-- Algorithm Logs Modal -->
+<div class="modal fade" id="algorithmLogsModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-xl" role="document" style="max-width: 90%;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Algorithm Logs</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 0;">
+                <div id="logsContent" class="log-container" style="background: #f8f9fa; font-family: 'Courier New', monospace; font-size: 12px; max-height: 600px; overflow-y: auto; padding: 15px; white-space: pre-wrap;">
+                    <div class="text-center text-muted">
+                        <div class="spinner-border" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                        <p>Loading logs...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -324,4 +354,88 @@
             }
         });
     </script>
+
+    <script>
+function loadAlgorithmLogs() {
+    // Show modal
+    $('#algorithmLogsModal').modal('show');
+    
+    // Fetch logs
+    fetch("{{ url_for('main.get_algorithm_logs', period_id=active_period.id) }}")
+        .then(response => response.json())
+        .then(data => {
+            const logsContent = document.getElementById('logsContent');
+            
+            if (data.success) {
+                let html = '';
+                data.logs.forEach(log => {
+                    if (log.type === 'header') {
+                        html += `<span style="color: #0066cc; font-weight: bold;">${log.message}</span>\n`;
+                    } else if (log.type === 'footer') {
+                        html += `<span style="color: #0066cc; font-weight: bold; border-top: 1px solid #0066cc; display: block; padding-top: 5px;">${log.message}</span>\n`;
+                    } else if (log.type === 'error') {
+                        html += `<span style="color: #dc3545;">[${log.timestamp}] ❌ ERROR: ${log.message}</span>\n`;
+                        if (log.details) html += `  Details: ${JSON.stringify(log.details)}\n`;
+                    } else if (log.type === 'warning') {
+                        html += `<span style="color: #ffc107;">[${log.timestamp}] ⚠️ WARNING: ${log.message}</span>\n`;
+                        if (log.details) html += `  Details: ${JSON.stringify(log.details)}\n`;
+                    } else if (log.type === 'success') {
+                        html += `<span style="color: #28a745;">[${log.timestamp}] ${log.message}</span>\n`;
+                        if (log.details) {
+                            Object.entries(log.details).forEach(([key, value]) => {
+                                html += `  • ${key}: ${value}\n`;
+                            });
+                        }
+                    } else if (log.type === 'shift_start') {
+                        html += `<span style="color: #17a2b8; font-weight: bold;">[${log.timestamp}] ${log.message}</span>\n`;
+                        if (log.details) {
+                            Object.entries(log.details).forEach(([key, value]) => {
+                                html += `  ${key}: ${value} `;
+                            });
+                            html += '\n';
+                        }
+                    } else if (log.type === 'eligible') {
+                        html += `<span style="color: #6c757d;">[${log.timestamp}] ${log.message}</span>\n`;
+                        if (log.details && log.details.workers) {
+                            log.details.workers.forEach(worker => {
+                                html += `  • ${worker.name}: weighted=${worker.weighted_hours}, real=${worker.real_hours}\n`;
+                            });
+                        }
+                    } else if (log.type === 'summary') {
+                        html += `<span style="color: #0066cc; font-weight: bold; background: #e7f3ff; display: block; padding: 5px; margin: 5px 0;">[${log.timestamp}] ${log.message}</span>\n`;
+                        if (log.details) {
+                            Object.entries(log.details).forEach(([key, value]) => {
+                                html += `  ${key}: ${value}\n`;
+                            });
+                        }
+                    } else if (log.type === 'worker_final') {
+                        html += `<span style="color: #6f42c1;">[${log.timestamp}] 👤 ${log.message}</span>`;
+                        if (log.details) {
+                            html += ' → ';
+                            Object.entries(log.details).forEach(([key, value], index, array) => {
+                                html += `${key}: ${value}`;
+                                if (index < array.length - 1) html += ' | ';
+                            });
+                        }
+                        html += '\n';
+                    } else {
+                        html += `<span style="color: #212529;">[${log.timestamp}] ${log.message}</span>\n`;
+                        if (log.details) {
+                            Object.entries(log.details).forEach(([key, value]) => {
+                                html += `  ${key}: ${value}\n`;
+                            });
+                        }
+                    }
+                });
+                logsContent.innerHTML = html;
+            } else {
+                logsContent.innerHTML = `<span style="color: #6c757d;">${data.message}</span>`;
+            }
+        })
+        .catch(error => {
+            document.getElementById('logsContent').innerHTML = 
+                `<span style="color: #dc3545;">Error loading logs: ${error}</span>`;
+        });
+}
+</script>
 {% endblock %}

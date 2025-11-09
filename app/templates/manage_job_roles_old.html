@@ -2,6 +2,7 @@
 {% block title %}Manage Job Roles for {{ period.name }}{% endblock %}
 
 {% block content %}
+{# ... (Existing content at the top of the page) ... #}
 <div class="row">
     <div class="col-lg-12">
         <h2>Job Roles & Coverage Slots for Period: '{{ period.name }}'</h2>
@@ -54,11 +55,7 @@
                         <div class="form-group col-md-4"><label for="duration_minutes">Minutes:</label><input type="number" class="form-control" id="duration_minutes" name="duration_minutes" value="0" min="0" max="59" step="5" required></div>
                     </div>
 
-                    {# NEW: Difficulty Note #}
-                    <div class="alert alert-info">
-                        <small><strong>Note:</strong> Difficulty ratings are now determined by worker consensus through surveys. 
-                        New roles start with neutral difficulty (1.0) until workers rate them.</small>
-                    </div>
+                    {# REMOVED: Difficulty Multiplier Slider Section #}
                     
                     {# Working Hours Constraints Section #}
                     <hr>
@@ -104,53 +101,6 @@
             </div>
         </div>
 
-        {# NEW: Worker Rating System Section #}
-        {% if job_roles %}
-        <div class="card mb-4 shadow-sm">
-            <div class="card-header bg-success text-white">
-                Worker Rating System
-            </div>
-            <div class="card-body">
-                <p class="card-text">Let workers democratically rate job difficulty for fairer scheduling.</p>
-                
-                <div class="btn-group-vertical btn-group-block mb-3">
-                    <a href="{{ url_for('main.export_rating_template', period_id=period.id) }}" 
-                       class="btn btn-outline-success">
-                        📋 Export Rating Template
-                    </a>
-                    <small class="text-muted">Generate CSV for workers to fill out</small>
-                </div>
-                
-                <div class="btn-group-vertical btn-group-block mb-3">
-                    <a href="{{ url_for('main.import_worker_ratings', period_id=period.id) }}" 
-                       class="btn btn-outline-primary">
-                        📊 Import Worker Ratings
-                    </a>
-                    <small class="text-muted">Upload completed ratings to update difficulties</small>
-                </div>
-                
-                <div class="btn-group-vertical btn-group-block">
-                    <form method="POST" action="{{ url_for('main.reset_difficulties', period_id=period.id) }}" 
-                          style="display: inline;" onsubmit="return confirm('Reset all difficulty ratings to neutral (1.0)? This will remove all worker-provided ratings.')">
-                        <button type="submit" class="btn btn-outline-warning btn-block">
-                            🔄 Reset All Difficulties
-                        </button>
-                    </form>
-                    <small class="text-muted">Reset all roles to neutral difficulty (1.0)</small>
-                </div>
-                
-                <hr>
-                <h6>How it works:</h6>
-                <ol class="small">
-                    <li>Export CSV template with worker-role combinations</li>
-                    <li>Workers rate roles they're qualified for (1-5 scale)</li>
-                    <li>Import completed ratings to calculate averages</li>
-                    <li>System uses consensus ratings for fair scheduling</li>
-                </ol>
-            </div>
-        </div>
-        {% endif %}
-
         <h4>Existing Job Roles <span class="badge badge-secondary">{{ job_roles|length }}</span></h4>
         {% if job_roles %}
             <ul class="list-group mb-3">
@@ -164,24 +114,7 @@
                             {% if role.shift_duration_minutes > 0 %}{{ role.shift_duration_minutes }}m{% endif %}
                             {% if role.shift_duration_days == 0 and role.shift_duration_hours == 0 and role.shift_duration_minutes == 0 %}0m (Warning: No duration!){% endif %}
                         </small><br>
-                        {# UPDATED: Enhanced difficulty display with worker rating context #}
-                        <small><strong>Difficulty Rating:</strong> 
-                            <span class="badge badge-pill 
-                                {% if role.difficulty_multiplier <= 1.5 %}badge-success
-                                {% elif role.difficulty_multiplier <= 2.5 %}badge-info
-                                {% elif role.difficulty_multiplier <= 3.5 %}badge-warning
-                                {% elif role.difficulty_multiplier <= 4.5 %}badge-danger
-                                {% else %}badge-dark{% endif %}" 
-                                title="{% if role.difficulty_multiplier == 1.0 %}Default/Neutral - Not yet rated by workers{% else %}Worker-rated difficulty{% endif %}">
-                                {{ "%.1f"|format(role.difficulty_multiplier) }} - 
-                                {% if role.difficulty_multiplier <= 1.5 %}Easy/Regular
-                                {% elif role.difficulty_multiplier <= 2.5 %}Light
-                                {% elif role.difficulty_multiplier <= 3.5 %}Moderate
-                                {% elif role.difficulty_multiplier <= 4.5 %}Hard
-                                {% else %}Very Hard{% endif %}
-                                {% if role.difficulty_multiplier == 1.0 %}🔧{% else %}👥{% endif %}
-                            </span>
-                        </small><br>
+                        {# REMOVED: Difficulty display #}
                         <small><strong>Working Hours:</strong> 
                             <span class="badge badge-pill {% if role.has_time_restrictions() %}badge-warning{% else %}badge-success{% endif %}">
                                 {{ role.get_working_hours_str() }}
@@ -197,96 +130,90 @@
                 </li>
             {% endfor %}
             </ul>
-            
-            {# NEW: Rating Summary #}
-            <div class="alert alert-light">
-                <h6>Rating Legend:</h6>
-                <span class="badge badge-success">1.0-1.5 Easy/Regular</span>
-                <span class="badge badge-info">1.6-2.5 Light</span>
-                <span class="badge badge-warning">2.6-3.5 Moderate</span>
-                <span class="badge badge-danger">3.6-4.5 Hard</span>
-                <span class="badge badge-dark">4.6-5.0 Very Hard</span>
-                <br><small class="text-muted mt-1">
-                    🔧 = Default/Neutral (not rated by workers) | 👥 = Worker-rated difficulty
-                </small>
-            </div>
         {% else %}
             <p>No job roles defined for this period yet. Add roles like "Cook", "Servant", "Manager" and specify how many are needed and their typical shift length.</p>
         {% endif %}
     </div>
 
-    <!-- Generate Slots & Assignment Section -->
-    <div class="col-md-7">
-        <h4>Generate Coverage Slots & Assign Workers</h4>
-        {% if job_roles %}
-            <form method="POST" action="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}">
-                <button type="submit" class="btn btn-success btn-lg btn-block mb-3">
-                    {% if has_generated_slots %}Re-Generate Slots & Assign Workers{% else %}Generate Slots & Assign Workers{% endif %}
-                </button>
-                
-                <!-- Random Seed Section -->
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <h6 class="card-title">🎲 Randomization Options</h6>
-                        <div class="form-group mb-2">
-                            <label for="random_seed" class="small">Random Seed (Optional):</label>
-                            <input type="number" class="form-control form-control-sm" id="random_seed" name="random_seed" 
-                                   placeholder="Leave empty for auto-generated seed" min="1" max="999999">
-                            <small class="text-muted">
-                                Each generation uses randomization for fairness. 
-                                Use the same seed to reproduce identical results, or leave empty for variety.
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                
-                <p class="text-muted small">This will create coverage slots for each job role and immediately attempt to assign qualified workers using worker-determined difficulty ratings for fair distribution. Existing slots and assignments for this period will be replaced. Ensure <a href="{{ url_for('main.manage_workers') }}">workers are set up</a> with role qualifications and unavailability.</p>
-            </form>
+    <!-- ############################################ -->
+    <!-- START OF THE FIX -->
+    <!-- The logic here is simplified to be more user-friendly. -->
+ <!-- Replace the existing form in the "Generate Coverage Slots & Assign Workers" section -->
+
+<div class="col-md-7">
+    <h4>Generate Coverage Slots & Assign Workers</h4>
+    {% if job_roles %}
+        <form method="POST" action="{{ url_for('main.generate_slots_and_assign_action', period_id=period.id) }}">
+            <button type="submit" class="btn btn-success btn-lg btn-block mb-3">
+                {% if has_generated_slots %}Re-Generate Slots & Assign Workers{% else %}Generate Slots & Assign Workers{% endif %}
+            </button>
             
-            {% if not workers_exist %}
-                <div class="alert alert-warning mt-3">
-                    <strong>Warning:</strong> You have not created any workers yet. The generated shifts will all be <span class="font-weight-bold">UNASSIGNED</span>. <a href="{{ url_for('main.manage_workers') }}">Add workers here</a>.
-                </div>
-            {% endif %}
-
-        {% else %}
-            <p class="text-muted">Add job roles to this period first to enable generation of coverage slots and assignments.</p>
-        {% endif %}
-
-        {% if generated_slots %}
-            <h5 class="mt-3">Generated Coverage Slots <span class="badge badge-info">{{ generated_slots|length }}</span></h5>
-            <div class="list-group" style="max-height: 500px; overflow-y: auto;">
-            {% for slot in generated_slots %}
-                <div class="list-group-item list-group-item-action flex-column align-items-start">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h6 class="mb-1">{{ slot.name }}</h6>
-                        <small>{{ slot.duration_hours_minutes_str }}</small>
+            <!-- NEW: Random Seed Section -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-title">🎲 Randomization Options</h6>
+                    <div class="form-group mb-2">
+                        <label for="random_seed" class="small">Random Seed (Optional):</label>
+                        <input type="number" class="form-control form-control-sm" id="random_seed" name="random_seed" 
+                               placeholder="Leave empty for auto-generated seed" min="1" max="999999">
+                        <small class="text-muted">
+                            Each generation uses randomization for fairness. 
+                            Use the same seed to reproduce identical results, or leave empty for variety.
+                        </small>
                     </div>
-                    <p class="mb-1"><small>
-                        {{ slot.slot_start_datetime.strftime('%a, %b %d, %Y %I:%M %p') }}
-                        <strong>to</strong>
-                        {{ slot.slot_end_datetime.strftime('%a, %b %d, %Y %I:%M %p') }}
-                    </small></p>
                 </div>
-            {% endfor %}
             </div>
-        {% elif has_generated_slots == false and job_roles %}
-             <p class="mt-3 text-muted">No coverage slots have been generated yet. Click the button above.</p>
+            <!-- END: Random Seed Section -->
+            
+            <p class="text-muted small">This will create coverage slots for each job role and immediately attempt to assign qualified workers. Existing slots and assignments for this period will be replaced. Ensure <a href="{{ url_for('main.manage_workers') }}">workers are set up</a> with role qualifications and unavailability.</p>
+        </form>
+        
+        {# This message now appears if no workers are set up, as a helpful warning #}
+        {% if not workers_exist %}
+            <div class="alert alert-warning mt-3">
+                <strong>Warning:</strong> You have not created any workers yet. The generated shifts will all be <span class="font-weight-bold">UNASSIGNED</span>. <a href="{{ url_for('main.manage_workers') }}">Add workers here</a>.
+            </div>
         {% endif %}
-    </div>
+
+    {% else %}
+        <p class="text-muted">Add job roles to this period first to enable generation of coverage slots and assignments.</p>
+    {% endif %}
+
+    {% if generated_slots %}
+        <h5 class="mt-3">Generated Coverage Slots <span class="badge badge-info">{{ generated_slots|length }}</span></h5>
+        <div class="list-group" style="max-height: 500px; overflow-y: auto;">
+        {% for slot in generated_slots %}
+            <div class="list-group-item list-group-item-action flex-column align-items-start">
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">{{ slot.name }}</h6>
+                    <small>{{ slot.duration_hours_minutes_str }}</small>
+                </div>
+                <p class="mb-1"><small>
+                    {{ slot.slot_start_datetime.strftime('%a, %b %d, %Y %I:%M %p') }}
+                    <strong>to</strong>
+                    {{ slot.slot_end_datetime.strftime('%a, %b %d, %Y %I:%M %p') }}
+                </small></p>
+            </div>
+        {% endfor %}
+        </div>
+    {% elif has_generated_slots == false and job_roles %}
+         <p class="mt-3 text-muted">No coverage slots have been generated yet. Click the button above.</p>
+    {% endif %}
+</div>
+
+
 </div>
 <hr>
 <div class="mt-3 mb-3 text-center">
     <a href="{{ url_for('main.manage_workers') }}" class="btn btn-info btn-lg mx-2">Manage Workers & Qualifications</a>
     <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg mx-2">Go to Dashboard (View Full Schedule)</a>
-    {% if job_roles %}
-        <a href="{{ url_for('main.fairness_statistics', period_id=period.id) }}" class="btn btn-warning btn-lg mx-2">View Fairness Statistics</a>
-    {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}{{ super() }}
 <script>
+// REMOVED: Difficulty slider JavaScript
+
 function toggleTimeRestrictions() {
     const checkbox = document.getElementById('has_time_restrictions');
     const section = document.getElementById('time_restrictions_section');
