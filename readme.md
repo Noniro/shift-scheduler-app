@@ -75,7 +75,6 @@ The algorithm aims to achieve:
 
 - **Proportional Share:** Each worker gets ≥ 1/n of total workload (in their perception)
 - **Envy-Free (EF):** No worker prefers another's assignment bundle
-- **EF1 (Almost Envy-Free):** Envy can be eliminated by removing at most 1 shift
 
 These are concepts from **algorithmic fair division** and ensure that the schedule is perceived as fair even when workers have different preferences.
 
