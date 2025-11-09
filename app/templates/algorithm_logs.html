@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Algorithm Logs - {{ period.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2>🔍 Algorithm Execution Logs</h2>
+        <p class="lead mb-0">For Scheduling Period: <strong>{{ period.name }}</strong></p>
+        <small class="text-muted">({{ period.period_start_datetime.strftime('%b %d, %Y %H:%M') }} - {{ period.period_end_datetime.strftime('%b %d, %Y %H:%M') }})</small>
+    </div>
+    <div>
+        <a href="{{ url_for('main.manage_job_roles_for_period', period_id=period.id) }}" class="btn btn-outline-primary">Back to Job Roles</a>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">Back to Dashboard</a>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+        <span>📜 Execution Log ({{ logs|length }} entries)</span>
+        <button onclick="window.print()" class="btn btn-sm btn-light">🖨️ Print</button>
+    </div>
+    <div class="card-body p-0">
+        <div class="log-container" style="background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; font-size: 14px; max-height: 800px; overflow-y: auto; padding: 20px;">
+            {% for log in logs %}
+                {% if log.type == 'header' %}
+                    <div class="log-entry log-header" style="color: #4ec9b0; font-weight: bold; margin-top: 10px;">
+                        {{ log.message }}
+                    </div>
+                {% elif log.type == 'footer' %}
+                    <div class="log-entry log-footer" style="color: #4ec9b0; font-weight: bold; margin-top: 10px; border-top: 1px solid #4ec9b0; padding-top: 10px;">
+                        {{ log.message }}
+                    </div>
+                {% elif log.type == 'error' %}
+                    <div class="log-entry log-error" style="color: #f48771; margin: 5px 0;">
+                        <span style="color: #f48771;">[{{ log.timestamp }}]</span>
+                        <span style="color: #f48771; font-weight: bold;">❌ ERROR:</span> {{ log.message }}
+                        {% if log.details %}
+                            <div style="margin-left: 20px; color: #ce9178;">
+                                {{ log.details }}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif log.type == 'warning' %}
+                    <div class="log-entry log-warning" style="color: #dcdcaa; margin: 5px 0;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        <span style="color: #dcdcaa; font-weight: bold;">⚠️ WARNING:</span> {{ log.message }}
+                        {% if log.details %}
+                            <div style="margin-left: 20px; color: #ce9178;">
+                                {% for key, value in log.details.items() %}
+                                    <div>{{ key }}: {{ value }}</div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif log.type == 'success' %}
+                    <div class="log-entry log-success" style="color: #4ec9b0; margin: 5px 0;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        {{ log.message }}
+                        {% if log.details %}
+                            <div style="margin-left: 20px; color: #ce9178;">
+                                {% for key, value in log.details.items() %}
+                                    <div style="color: #9cdcfe;">  • {{ key }}: <span style="color: #ce9178;">{{ value }}</span></div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif log.type == 'shift_start' %}
+                    <div class="log-entry log-shift" style="color: #569cd6; margin: 10px 0 5px 0; font-weight: bold;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        {{ log.message }}
+                        {% if log.details %}
+                            <div style="margin-left: 20px; font-weight: normal;">
+                                {% for key, value in log.details.items() %}
+                                    <span style="color: #9cdcfe;">{{ key }}:</span> <span style="color: #ce9178;">{{ value }}</span>
+                                    {% if not loop.last %} | {% endif %}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif log.type == 'eligible' %}
+                    <div class="log-entry log-eligible" style="color: #b5cea8; margin: 5px 0;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        {{ log.message }}
+                        {% if log.details and log.details.workers %}
+                            <div style="margin-left: 20px;">
+                                {% for worker in log.details.workers %}
+                                    <div style="color: #9cdcfe;">
+                                        • {{ worker.name }}: 
+                                        <span style="color: #ce9178;">weighted={{ worker.weighted_hours }}, real={{ worker.real_hours }}</span>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif log.type == 'summary' %}
+                    <div class="log-entry log-summary" style="color: #4ec9b0; margin: 10px 0; padding: 10px; border: 1px solid #4ec9b0; background: #2d2d30;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        <strong>{{ log.message }}</strong>
+                        {% if log.details %}
+                            <div style="margin-left: 20px; margin-top: 5px;">
+                                {% for key, value in log.details.items() %}
+                                    <div><span style="color: #9cdcfe;">{{ key }}:</span> <span style="color: #ce9178; font-weight: bold;">{{ value }}</span></div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% elif log.type == 'worker_final' %}
+                    <div class="log-entry log-worker-final" style="color: #c586c0; margin: 5px 0;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        <span style="color: #c586c0; font-weight: bold;">👤 {{ log.message }}</span>
+                        {% if log.details %}
+                            <span style="color: #9cdcfe;">→</span>
+                            {% for key, value in log.details.items() %}
+                                <span style="color: #9cdcfe;">{{ key }}:</span> <span style="color: #ce9178;">{{ value }}</span>
+                                {% if not loop.last %} | {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <div class="log-entry log-info" style="color: #d4d4d4; margin: 5px 0;">
+                        <span style="color: #808080;">[{{ log.timestamp }}]</span>
+                        {{ log.message }}
+                        {% if log.details %}
+                            <div style="margin-left: 20px; color: #ce9178;">
+                                {% for key, value in log.details.items() %}
+                                    <div><span style="color: #9cdcfe;">{{ key }}:</span> {{ value }}</div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card-footer text-muted">
+        <small>Total log entries: {{ logs|length }}</small>
+    </div>
+</div>
+
+<div class="alert alert-info mt-3">
+    <h6>📖 Reading the Logs:</h6>
+    <ul class="mb-0 small">
+        <li><strong style="color: #4ec9b0;">✓ Green</strong> = Success (assignments made)</li>
+        <li><strong style="color: #f48771;">✗ Red</strong> = Error (critical issues)</li>
+        <li><strong style="color: #dcdcaa;">⚠ Yellow</strong> = Warning (couldn't assign)</li>
+        <li><strong style="color: #569cd6;">--- Blue</strong> = Shift being processed</li>
+        <li><strong style="color: #c586c0;">👤 Purple</strong> = Final worker states</li>
+    </ul>
+</div>
+{% endblock %}

@@ -240,3 +240,18 @@ class WorkerRoleRating(db.Model):
     
     def __repr__(self):
         return f'<WorkerRoleRating worker={self.worker_id} role={self.job_role_id} rating={self.difficulty_rating}>'
+    
+
+
+class AlgorithmLog(db.Model):
+    """Stores algorithm execution logs for viewing"""
+    __tablename__ = 'algorithm_log'
+    id = db.Column(db.Integer, primary_key=True)
+    scheduling_period_id = db.Column(db.Integer, db.ForeignKey('scheduling_period.id', ondelete="CASCADE"), nullable=False)
+    log_data = db.Column(db.Text, nullable=False)  # JSON string of logs
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    scheduling_period = db.relationship('SchedulingPeriod', backref='algorithm_logs')
+    
+    def __repr__(self):
+        return f'<AlgorithmLog period={self.scheduling_period_id} at {self.created_at}>'
