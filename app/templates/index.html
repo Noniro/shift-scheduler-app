@@ -356,8 +356,8 @@
             }
         });
     </script>
-
-    <script>
+<script>
+{% if active_period %}
 function loadAlgorithmLogs() {
     // Show modal
     $('#algorithmLogsModal').modal('show');
@@ -439,5 +439,6 @@ function loadAlgorithmLogs() {
                 `<span style="color: #dc3545;">Error loading logs: ${error}</span>`;
         });
 }
+{% endif %}
 </script>
 {% endblock %}
