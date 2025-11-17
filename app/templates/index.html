@@ -60,9 +60,11 @@
                             <p class="text-muted mb-0"><small>Total Assigned Slots: {{ scheduled_assignments|length }}</small></p>
                             <div class="btn-group" role="group" aria-label="Export options">
                                 <!-- NEW: Algorithm Logs Button -->
-        <button type="button" class="btn btn-info btn-sm" onclick="loadAlgorithmLogs()" title="View Algorithm Logs">
-            🔍 Algorithm Logs
-        </button>
+                                       {% if active_period %}
+                                <button type="button" class="btn btn-info btn-sm" onclick="loadAlgorithmLogs()" title="View Algorithm Logs">
+                                    🔍 Algorithm Logs
+                                </button>
+                                {% endif %}
                                 <a href="{{ url_for('main.export_schedule_csv', period_id=active_period.id) }}" 
                                    class="btn btn-success btn-sm" title="Export as CSV">
                                     📊 Export CSV
