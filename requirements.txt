@@ -11,7 +11,7 @@ pandas>=2.0.0
 openpyxl>=3.1.0
 
 # Database
-SQLAlchemy==2.0.23
+SQLAlchemy==2.0.44
 
 # WSGI Server (for production deployment)
 gunicorn==21.2.0
