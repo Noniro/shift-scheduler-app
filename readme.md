@@ -132,38 +132,27 @@ cd shift-scheduler
 # Or download and extract the ZIP file
 ```
 
-### Step 2: Create Virtual Environment
-
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### Step 3: Install Dependencies
+### Step 2: Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 4: Initialize Database
+### Step 3: Initialize Database
 
 ```bash
 # Initialize migration repository (first time only)
-flask db init
+
+python -m flask db init
 
 # Create initial migration
-flask db migrate -m "Initial migration"
+python -m flask db migrate -m "Initial migration"
 
 # Apply migration
-flask db upgrade
+python -m flask db upgrade
 ```
 
-### Step 5: Run the Application
+### Step 4: Run the Application
 
 ```bash
 # Option 1: Using run.py (opens browser automatically)
