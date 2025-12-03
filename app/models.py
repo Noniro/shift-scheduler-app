@@ -251,7 +251,7 @@ class WorkerRoleRating(db.Model):
     difficulty_rating = db.Column(db.Float, nullable=False)  # 1.0 to 5.0
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Added cascade to automatically delete ratings when worker is deleted
+    #   Added cascade to automatically delete ratings when worker is deleted
     worker = db.relationship('Worker', backref=db.backref('role_ratings', cascade="all, delete-orphan"))
     job_role = db.relationship('JobRole', backref='worker_ratings')
     
